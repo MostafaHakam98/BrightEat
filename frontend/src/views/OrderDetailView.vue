@@ -1,0 +1,1203 @@
+<template>
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div v-if="loading" class="text-center py-8">
+      <p class="text-lg">Loading order...</p>
+      <p class="text-sm text-gray-500 mt-2">Code: {{ route.params.code }}</p>
+    </div>
+    <div v-else-if="error" class="text-center py-8">
+      <p class="text-red-600 text-lg mb-4">{{ error }}</p>
+      <button
+        @click="loadOrder()"
+        class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 mr-2"
+      >
+        Retry
+      </button>
+      <button
+        @click="router.push('/orders')"
+        class="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+      >
+        Back to Orders
+      </button>
+    </div>
+    <div v-else-if="!currentOrder" class="text-center py-8 text-gray-500">
+      <p class="text-lg mb-4">Order not found</p>
+      <button
+        @click="loadOrder()"
+        class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 mr-2"
+      >
+        Retry
+      </button>
+      <button
+        @click="router.push('/orders')"
+        class="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+      >
+        Back to Orders
+      </button>
+    </div>
+    <div v-else>
+      <div class="mb-6" v-if="currentOrder">
+        <button
+          @click="router.push('/orders')"
+          class="text-blue-600 hover:text-blue-800 mb-4 flex items-center"
+        >
+          ← Back to Orders
+        </button>
+        <div class="flex justify-between items-start">
+          <div>
+            <h1 class="text-3xl font-bold text-gray-900">{{ currentOrder?.restaurant_name || 'Unknown Restaurant' }}</h1>
+            <p class="text-gray-600 mt-2">Code: <span class="font-mono font-semibold text-blue-600">{{ currentOrder?.code || 'N/A' }}</span></p>
+            <p class="text-gray-600">Collector: <span class="font-semibold">{{ currentOrder?.collector_name || 'N/A' }}</span></p>
+            <p v-if="currentOrder?.cutoff_time" class="text-gray-600">Cutoff: <span class="font-semibold">{{ new Date(currentOrder.cutoff_time).toLocaleString() }}</span></p>
+            <p v-if="currentOrder?.assigned_users_details && currentOrder.assigned_users_details.length > 0" class="text-gray-600 mt-2">
+              <span class="font-semibold">Assigned to:</span> 
+              <span class="text-blue-600">{{ currentOrder.assigned_users_details.map(u => u.username).join(', ') }}</span>
+            </p>
+            <p v-if="currentOrder?.is_private" class="text-xs text-gray-500 mt-1">🔒 Private Order</p>
+          </div>
+          <div class="text-right">
+            <div class="inline-block px-4 py-2 rounded-lg font-semibold" :class="{
+              'bg-green-100 text-green-800': currentOrder?.status === 'OPEN',
+              'bg-yellow-100 text-yellow-800': currentOrder?.status === 'LOCKED',
+              'bg-blue-100 text-blue-800': currentOrder?.status === 'ORDERED',
+              'bg-gray-100 text-gray-800': currentOrder?.status === 'CLOSED',
+            }">
+              Status: {{ currentOrder?.status || 'UNKNOWN' }}
+            </div>
+            <p v-if="currentOrder?.status && currentOrder.status !== 'OPEN'" class="text-sm text-gray-500 mt-2">
+              {{ currentOrder.status === 'LOCKED' ? 'Order is locked. No items can be added or removed.' : '' }}
+              {{ currentOrder.status === 'ORDERED' ? 'Order has been placed.' : '' }}
+              {{ currentOrder.status === 'CLOSED' ? 'Order is closed.' : '' }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" v-if="currentOrder">
+        <div class="lg:col-span-2 space-y-6">
+          <!-- Assigned Users Notice -->
+          <div v-if="currentOrder?.assigned_users_details && currentOrder.assigned_users_details.length > 0" class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-sm font-medium text-blue-900 mb-1">👥 Assigned Order</p>
+            <p class="text-xs text-blue-700">This order is assigned to specific users. Only assigned users can join.</p>
+            <p class="text-xs text-blue-600 mt-1">
+              Assigned to: {{ currentOrder.assigned_users_details.map(u => u.username).join(', ') }}
+            </p>
+          </div>
+          
+          <!-- Status Message for Locked/Ordered/Closed -->
+          <div v-if="currentOrder?.status !== 'OPEN'" class="bg-white rounded-lg shadow p-6">
+            <div class="text-center py-4">
+              <p class="text-lg font-semibold mb-2">
+                Order is {{ currentOrder.status }}
+              </p>
+              <p class="text-gray-600 text-sm">
+                {{ currentOrder.status === 'LOCKED' ? 'The collector has locked this order. Items cannot be added or removed.' : '' }}
+                {{ currentOrder.status === 'ORDERED' ? 'This order has been placed with the restaurant.' : '' }}
+                {{ currentOrder.status === 'CLOSED' ? 'This order is closed.' : '' }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Add Items Section (only if OPEN) -->
+          <div v-if="currentOrder?.status === 'OPEN'" class="bg-white rounded-lg shadow-md p-6 border border-gray-100">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Add Items to Order</h2>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Menu Item</label>
+                <select
+                  v-model="selectedMenuItem"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >
+                  <option value="">Select menu item</option>
+                  <option v-for="item in availableMenuItems" :key="item.id" :value="item.id">
+                    {{ item.name }} - {{ item.price }} EGP
+                  </option>
+                </select>
+              </div>
+              <div class="flex space-x-2">
+                <input
+                  v-model.number="itemQuantity"
+                  type="number"
+                  min="1"
+                  placeholder="Quantity"
+                  class="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                />
+                <button
+                  @click="addMenuItem"
+                  :disabled="!selectedMenuItem || !itemQuantity"
+                  class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Add
+                </button>
+              </div>
+              <div class="border-t pt-4">
+                <p class="text-sm font-medium text-gray-700 mb-2">Or add custom item:</p>
+                <div class="flex space-x-2">
+                  <input
+                    v-model="customItemName"
+                    type="text"
+                    placeholder="Item name"
+                    class="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                  <input
+                    v-model.number="customItemPrice"
+                    type="number"
+                    step="0.01"
+                    placeholder="Price"
+                    class="w-24 px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                  <button
+                    @click="addCustomItem"
+                    :disabled="!customItemName || !customItemPrice"
+                    class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
+                  >
+                    Add Custom
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Order Items -->
+          <div class="bg-white rounded-lg shadow-md p-6 border border-gray-100">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Order Items</h2>
+            <div v-if="!currentOrder?.items || currentOrder.items.length === 0" class="text-gray-500 text-center py-4">
+              No items yet. {{ currentOrder?.status === 'OPEN' ? 'Add items above!' : '' }}
+            </div>
+            <div v-else class="space-y-2">
+              <div
+                v-for="item in currentOrder.items"
+                :key="item.id"
+                :class="[
+                  'flex justify-between items-center p-3 border rounded',
+                  item.user === authStore.user?.id ? 'border-blue-300 bg-blue-50' : 'border-gray-200'
+                ]"
+              >
+                <div class="flex-1">
+                  <div class="flex items-center space-x-2">
+                    <p class="font-medium">{{ item.item_name }}</p>
+                    <span v-if="item.user === authStore.user?.id" class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">
+                      Your Item
+                    </span>
+                  </div>
+                  <p class="text-sm text-gray-600">{{ item.user_name }} - Qty: {{ item.quantity }} × {{ formatPrice(item.unit_price) }} EGP</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                  <span class="font-semibold">{{ formatPrice(item.total_price) }} EGP</span>
+                  <button
+                    v-if="currentOrder?.status === 'OPEN' && item.user === authStore.user?.id"
+                    @click="removeItem(item.id)"
+                    class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                    title="Remove your item"
+                  >
+                    Remove
+                  </button>
+                  <button
+                    v-if="currentOrder?.status === 'OPEN' && currentOrder.collector === authStore.user?.id && item.user !== authStore.user?.id"
+                    @click="removeItem(item.id)"
+                    class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                    title="Remove item (collector)"
+                  >
+                    Remove
+                  </button>
+                  <span v-if="currentOrder?.status !== 'OPEN'" class="text-xs text-gray-400">Locked</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-6">
+          <!-- Order Summary -->
+          <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Summary</h2>
+            <div class="space-y-2 text-sm">
+              <div class="flex justify-between">
+                <span>Items Total:</span>
+                <span>{{ formatPrice(currentOrder?.total_items_cost) }} EGP</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Delivery:</span>
+                <span>{{ formatPrice(currentOrder?.delivery_fee) }} EGP</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Tip:</span>
+                <span>{{ formatPrice(currentOrder?.tip) }} EGP</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Service:</span>
+                <span>{{ formatPrice(currentOrder?.service_fee) }} EGP</span>
+              </div>
+              <div class="border-t pt-2 flex justify-between font-semibold">
+                <span>Total:</span>
+                <span>{{ formatPrice(currentOrder?.total_cost) }} EGP</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions (Collector only) -->
+          <div v-if="currentOrder?.collector === authStore.user?.id" class="bg-white rounded-lg shadow-md p-6 border border-gray-100">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Actions & Fees</h2>
+            <p class="text-sm text-gray-600 mb-4">
+              <strong>How it works:</strong> You (the collector) pay the restaurant for everyone's items plus fees. 
+              Then each person pays you back their share. Use the fee split rules below to calculate how much each person owes.
+            </p>
+            <div class="space-y-2">
+              <div v-if="currentOrder?.status === 'OPEN'">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Fees</label>
+                <input
+                  v-model.number="fees.delivery_fee"
+                  type="number"
+                  step="0.01"
+                  placeholder="Delivery Fee"
+                  class="w-full mb-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+                <input
+                  v-model.number="fees.tip"
+                  type="number"
+                  step="0.01"
+                  placeholder="Tip"
+                  class="w-full mb-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+                <input
+                  v-model.number="fees.service_fee"
+                  type="number"
+                  step="0.01"
+                  placeholder="Service Fee"
+                  class="w-full mb-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+                <select
+                  v-model="fees.fee_split_rule"
+                  class="w-full mb-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                >
+                  <option value="equal">Equal Split - Fees divided equally</option>
+                  <option value="proportional">Proportional - Based on item cost</option>
+                  <option value="collector_pays">Collector Pays - You pay all fees</option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1 mb-2">
+                  <strong>Fee Split Rules:</strong><br>
+                  • <strong>Equal:</strong> Fees split equally among everyone<br>
+                  • <strong>Proportional:</strong> Fees split based on each person's item cost<br>
+                  • <strong>Collector Pays:</strong> You pay all fees, others only pay for their items
+                </p>
+                <input
+                  v-model="fees.instapay_link"
+                  type="url"
+                  placeholder="Instapay Link"
+                  class="w-full mb-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+                <button
+                  @click="updateFees"
+                  class="w-full bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-colors"
+                >
+                  Update Fees
+                </button>
+              <button
+                @click="lockOrder"
+                class="w-full mt-2 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+              >
+                🔒 Lock Order
+              </button>
+              <button
+                v-if="currentOrder?.status === 'OPEN' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
+                @click="deleteOrder"
+                class="w-full mt-2 bg-red-800 text-white px-4 py-2 rounded-md hover:bg-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+              >
+                🗑️ Delete Order
+              </button>
+              <!-- Assign Users Section (Compact) -->
+              <div v-if="currentOrder?.status === 'OPEN'" class="mt-4 pt-4 border-t border-gray-200">
+                <button
+                  @click="toggleAssignUsers"
+                  class="w-full flex items-center justify-between text-sm text-gray-700 hover:text-gray-900 py-2"
+                >
+                  <span class="flex items-center">
+                    <span class="mr-2">👥</span>
+                    <span>Assign to Specific Users</span>
+                    <span v-if="currentOrder?.assigned_users_details?.length > 0" class="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                      {{ currentOrder.assigned_users_details.length }}
+                    </span>
+                  </span>
+                  <span class="text-gray-400">{{ showAssignUsers ? '▼' : '▶' }}</span>
+                </button>
+                <div v-if="showAssignUsers" class="mt-3 space-y-2 bg-gray-50 p-3 rounded-md">
+                  <p class="text-xs text-gray-600 mb-2">Select users for special orders (e.g., birthday cake). Order will be private.</p>
+                  <div class="flex space-x-1 mb-2">
+                    <button
+                      type="button"
+                      @click="selectAllUsers"
+                      class="text-xs bg-white hover:bg-gray-100 text-gray-700 px-2 py-1 rounded border border-gray-300"
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      @click="deselectAllUsers"
+                      class="text-xs bg-white hover:bg-gray-100 text-gray-700 px-2 py-1 rounded border border-gray-300"
+                    >
+                      None
+                    </button>
+                  </div>
+                  <select
+                    v-model="selectedUsers"
+                    multiple
+                    class="w-full text-sm px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    size="4"
+                  >
+                    <option v-for="user in allUsers" :key="user.id" :value="user.id">
+                      {{ user.username }}
+                    </option>
+                  </select>
+                  <p v-if="selectedUsers.length > 0" class="text-xs text-blue-600 mt-1">
+                    {{ selectedUsers.length }} selected
+                  </p>
+                  
+                  <!-- Even Split Option -->
+                  <div class="mt-3 pt-3 border-t border-gray-300">
+                    <p class="text-xs font-medium text-gray-700 mb-2">Optional: Split evenly among assigned users</p>
+                    <div class="space-y-2">
+                      <div>
+                        <label class="block text-xs text-gray-600 mb-1">Number of items per user</label>
+                        <input
+                          v-model.number="assignmentItems"
+                          type="number"
+                          min="1"
+                          placeholder="e.g., 2"
+                          class="w-full text-sm px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-xs text-gray-600 mb-1">Total cost (including delivery/fees)</label>
+                        <input
+                          v-model.number="assignmentTotalCost"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="e.g., 500"
+                          class="w-full text-sm px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      <p v-if="assignmentItems && assignmentTotalCost && selectedUsers.length > 0" class="text-xs text-green-600 mt-1">
+                        Each user will get {{ assignmentItems }} item(s) × {{ formatPrice(assignmentTotalCost / selectedUsers.length / assignmentItems) }} EGP = {{ formatPrice(assignmentTotalCost / selectedUsers.length) }} EGP per user
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    @click="updateAssignedUsers"
+                    :disabled="loading || (assignmentItems && !assignmentTotalCost) || (assignmentTotalCost && !assignmentItems)"
+                    class="w-full text-xs bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 disabled:opacity-50 mt-3"
+                  >
+                    {{ loading ? 'Saving...' : 'Save Assignment' }}
+                  </button>
+                </div>
+              </div>
+              
+              <div v-if="currentOrder?.status === 'OPEN' && currentOrder?.collector === authStore.user?.id && currentOrder?.participants?.length > 1" class="mt-4 pt-4 border-t border-gray-200">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Transfer Collector Role</label>
+                <select
+                  v-model="transferCollectorId"
+                  class="w-full mb-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                >
+                  <option value="">Select new collector</option>
+                  <option
+                    v-for="participant in currentOrder.participants"
+                    :key="participant.id"
+                    :value="participant.id"
+                    :disabled="participant.id === currentOrder.collector"
+                  >
+                    {{ participant.username }} {{ participant.id === currentOrder.collector ? '(Current)' : '' }}
+                  </option>
+                </select>
+                <button
+                  @click="transferCollector"
+                  :disabled="!transferCollectorId"
+                  class="w-full bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                >
+                  Transfer Collector Role
+                </button>
+              </div>
+              </div>
+              <button
+                v-if="currentOrder?.status === 'LOCKED'"
+                @click="markOrdered"
+                class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+              >
+                ✅ Mark as Ordered
+              </button>
+              <button
+                v-if="currentOrder?.status === 'ORDERED'"
+                @click="closeOrder"
+                class="w-full bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+              >
+                🔚 Close Order
+              </button>
+            </div>
+          </div>
+
+          <!-- Share Message -->
+          <div class="bg-white rounded-lg shadow-md p-6 border border-gray-100">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Share Message</h2>
+            <textarea
+              :value="currentOrder?.share_message || ''"
+              readonly
+              class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              rows="4"
+            ></textarea>
+            <button
+              @click="copyShareMessage"
+              class="mt-2 w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+            >
+              Copy Message
+            </button>
+          </div>
+
+          <!-- Payment Breakdown (if locked) -->
+          <div v-if="currentOrder?.status !== 'OPEN' && currentOrder?.payments" class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Payment Breakdown</h2>
+            <div class="space-y-3">
+              <div
+                v-for="payment in currentOrder.payments"
+                :key="payment.id"
+                :class="[
+                  'flex justify-between items-center p-3 border rounded',
+                  payment.is_paid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
+                ]"
+              >
+                <div class="flex-1">
+                  <p class="font-medium">{{ payment.user_name }}</p>
+                  <p class="text-sm text-gray-600">
+                    {{ payment.is_paid ? '✅ Paid' : '⏳ Pending' }}
+                    <span v-if="payment.paid_at" class="ml-2 text-xs">
+                      ({{ new Date(payment.paid_at).toLocaleString() }})
+                    </span>
+                  </p>
+                </div>
+                <div class="text-right">
+                  <p class="font-semibold text-lg">{{ formatPrice(payment.amount) }} EGP</p>
+                  <button
+                    v-if="!payment.is_paid && currentOrder?.instapay_link && payment.user === authStore.user?.id"
+                    @click="openInstapay"
+                    class="mt-1 text-xs text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Pay via Instapay
+                  </button>
+                </div>
+                <button
+                  v-if="!payment.is_paid && (currentOrder?.collector === authStore.user?.id || payment.user === authStore.user?.id)"
+                  @click="markPaymentPaid(payment.id)"
+                  class="ml-2 bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                >
+                  {{ payment.user === authStore.user?.id ? 'Mark as Paid' : 'Mark Paid' }}
+                </button>
+              </div>
+            </div>
+            <div v-if="currentOrder?.instapay_link && currentOrder.collector === authStore.user?.id" class="mt-4 p-3 bg-blue-50 rounded">
+              <p class="text-sm font-medium mb-2">Instapay Link:</p>
+              <div class="flex items-center space-x-2">
+                <input
+                  :value="currentOrder.instapay_link"
+                  readonly
+                  class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                />
+                <button
+                  @click="copyInstapayLink"
+                  class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Instapay QR Code (if locked/ordered/closed and collector has Instapay link or QR code) -->
+          <div v-if="currentOrder?.status !== 'OPEN' && (currentOrder?.collector_instapay_link || currentOrder?.collector_instapay_qr_code_url)" class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Pay via Instapay</h2>
+            <p class="text-sm text-gray-600 mb-4">Scan the QR code below to pay {{ currentOrder?.collector_name }} via Instapay</p>
+            <div class="flex flex-col items-center">
+              <!-- Show uploaded QR code image if available, otherwise generate from link -->
+              <img
+                v-if="currentOrder?.collector_instapay_qr_code_url"
+                :src="currentOrder.collector_instapay_qr_code_url"
+                alt="Instapay QR Code"
+                class="border border-gray-300 rounded mb-4 max-w-xs"
+              />
+              <canvas
+                v-else-if="currentOrder?.collector_instapay_link"
+                ref="instapayQrCanvas"
+                class="border border-gray-300 rounded mb-4"
+              ></canvas>
+              <a
+                v-if="currentOrder?.collector_instapay_link"
+                :href="currentOrder.collector_instapay_link"
+                target="_blank"
+                class="text-blue-600 hover:text-blue-800 underline text-sm"
+              >
+                {{ currentOrder.collector_instapay_link }}
+              </a>
+              <button
+                v-if="currentOrder?.collector_instapay_link"
+                @click="copyCollectorInstapayLink"
+                class="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+              >
+                Copy Link
+              </button>
+            </div>
+          </div>
+          
+          <!-- Receipt View (if ordered) -->
+          <div v-if="currentOrder?.status === 'ORDERED' || currentOrder?.status === 'CLOSED'" class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Order Receipt</h2>
+            <div class="space-y-2 text-sm">
+              <div class="flex justify-between border-b pb-2">
+                <span class="font-medium">Restaurant:</span>
+                <span>{{ currentOrder?.restaurant_name }}</span>
+              </div>
+              <div class="flex justify-between border-b pb-2">
+                <span class="font-medium">Order Code:</span>
+                <span class="font-mono">{{ currentOrder?.code }}</span>
+              </div>
+              <div class="flex justify-between border-b pb-2">
+                <span class="font-medium">Items Total:</span>
+                <span>{{ formatPrice(currentOrder?.total_items_cost) }} EGP</span>
+              </div>
+              <div class="flex justify-between border-b pb-2">
+                <span class="font-medium">Delivery:</span>
+                <span>{{ formatPrice(currentOrder?.delivery_fee) }} EGP</span>
+              </div>
+              <div class="flex justify-between border-b pb-2">
+                <span class="font-medium">Tip:</span>
+                <span>{{ formatPrice(currentOrder?.tip) }} EGP</span>
+              </div>
+              <div class="flex justify-between border-b pb-2">
+                <span class="font-medium">Service Fee:</span>
+                <span>{{ formatPrice(currentOrder?.service_fee) }} EGP</span>
+              </div>
+              <div class="flex justify-between pt-2 font-bold text-lg">
+                <span>Total:</span>
+                <span>{{ formatPrice(currentOrder?.total_cost) }} EGP</span>
+              </div>
+            </div>
+            <button
+              @click="copyReceipt"
+              class="mt-4 w-full bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+            >
+              Copy Receipt to Share
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, computed, watch, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useOrdersStore } from '../stores/orders'
+import { useAuthStore } from '../stores/auth'
+import api from '../api'
+import QRCode from 'qrcode'
+
+const route = useRoute()
+const router = useRouter()
+const ordersStore = useOrdersStore()
+const authStore = useAuthStore()
+
+const loading = ref(true)
+const error = ref(null)
+const selectedMenuItem = ref('')
+const itemQuantity = ref(1)
+const customItemName = ref('')
+const customItemPrice = ref(0)
+const instapayQrCanvas = ref(null)
+const transferCollectorId = ref('')
+const showAssignUsers = ref(false)
+const selectedUsers = ref([])
+const allUsers = ref([])
+const loadingUsers = ref(false)
+const assignmentItems = ref(null)
+const assignmentTotalCost = ref(null)
+const fees = ref({
+  delivery_fee: 0,
+  tip: 0,
+  service_fee: 0,
+  fee_split_rule: 'equal',
+  instapay_link: '',
+})
+
+// Helper to get order from either computed or store directly
+const order = computed(() => {
+  const current = ordersStore.currentOrder
+  if (current) {
+    console.log('Computed order exists:', !!current, 'Keys:', Object.keys(current))
+  } else {
+    console.log('Computed order is null')
+  }
+  return current
+})
+
+// Always use this to get the order - it falls back to store if computed is null
+const currentOrder = computed(() => {
+  return order.value || ordersStore.currentOrder
+})
+
+const availableMenuItems = computed(() => {
+  return ordersStore.menuItems.filter(item => item.is_available)
+})
+
+// Helper function to format prices safely
+function formatPrice(value) {
+  if (value === null || value === undefined) return '0.00'
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  return isNaN(num) ? '0.00' : num.toFixed(2)
+}
+
+async function loadOrder() {
+  loading.value = true
+  error.value = null
+  const code = route.params.code.toUpperCase()
+  
+  try {
+    console.log('Loading order with code:', code)
+    const result = await ordersStore.fetchOrderByCode(code)
+    console.log('Fetch result:', result)
+    
+    if (!result.success) {
+      error.value = result.error?.detail || result.error?.error || 'Order not found'
+      console.error('Failed to fetch order:', result.error)
+      loading.value = false
+      return
+    }
+    
+    if (!ordersStore.currentOrder) {
+      error.value = 'Order not found'
+      loading.value = false
+      return
+    }
+    
+    console.log('Order loaded:', ordersStore.currentOrder)
+    console.log('Order keys:', ordersStore.currentOrder ? Object.keys(ordersStore.currentOrder) : 'null')
+    console.log('Order restaurant_name:', ordersStore.currentOrder?.restaurant_name)
+    
+    // Verify order is set
+    if (!ordersStore.currentOrder) {
+      console.error('Order data not set in store after successful fetch')
+      error.value = 'Order data not set in store'
+      loading.value = false
+      return
+    }
+    
+    // Force reactivity update
+    await new Promise(resolve => setTimeout(resolve, 0))
+    console.log('After microtask - Order still exists:', !!ordersStore.currentOrder)
+    
+    // Fetch menus for the restaurant
+    try {
+      await ordersStore.fetchMenus(ordersStore.currentOrder.restaurant)
+      console.log('Menus loaded:', ordersStore.menus)
+      
+      // Fetch menu items from the first menu
+      if (ordersStore.menus.length > 0) {
+        await ordersStore.fetchMenuItems(ordersStore.menus[0].id)
+        console.log('Menu items loaded:', ordersStore.menuItems)
+      }
+    } catch (menuError) {
+      console.warn('Failed to load menus:', menuError)
+      // Don't fail the whole page if menus fail to load
+    }
+    
+    // Payments are already included in order.payments from the API
+    
+    // Set fees - ensure they're numbers
+    if (ordersStore.currentOrder) {
+      fees.value = {
+        delivery_fee: parseFloat(ordersStore.currentOrder.delivery_fee) || 0,
+        tip: parseFloat(ordersStore.currentOrder.tip) || 0,
+        service_fee: parseFloat(ordersStore.currentOrder.service_fee) || 0,
+        fee_split_rule: ordersStore.currentOrder.fee_split_rule || 'equal',
+        instapay_link: ordersStore.currentOrder.instapay_link || '',
+      }
+      console.log('Fees set:', fees.value)
+    }
+    
+    // Generate QR code for collector's Instapay link
+    await nextTick()
+    generateInstapayQR()
+    
+    // Load users for assignment (any user can assign)
+    if (ordersStore.currentOrder) {
+      await loadUsers()
+      // Set current assigned users
+      if (ordersStore.currentOrder.assigned_users_details) {
+        selectedUsers.value = ordersStore.currentOrder.assigned_users_details.map(u => u.id)
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load order:', err)
+    error.value = 'Failed to load order: ' + (err.message || 'Unknown error')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function generateInstapayQR() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (order?.collector_instapay_link && instapayQrCanvas.value) {
+    try {
+      await QRCode.toCanvas(instapayQrCanvas.value, order.collector_instapay_link, {
+        width: 250,
+        margin: 2,
+      })
+    } catch (error) {
+      console.error('Failed to generate QR code:', error)
+    }
+  }
+}
+
+function copyCollectorInstapayLink() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (order?.collector_instapay_link) {
+    navigator.clipboard.writeText(order.collector_instapay_link)
+    alert('Instapay link copied to clipboard!')
+  }
+}
+
+let isLoading = false
+
+onMounted(() => {
+  if (!isLoading) {
+    isLoading = true
+    loadOrder().finally(() => {
+      isLoading = false
+    })
+  }
+})
+
+// Watch for route changes (e.g., when code changes) - but only if not already loading
+watch(() => route.params.code, (newCode, oldCode) => {
+  if (newCode !== oldCode && !isLoading) {
+    isLoading = true
+    loadOrder().finally(() => {
+      isLoading = false
+    })
+  }
+})
+
+// Watch for collector_instapay_link changes to regenerate QR code
+watch(() => currentOrder.value?.collector_instapay_link, () => {
+  nextTick(() => {
+    generateInstapayQR()
+  })
+})
+
+async function addMenuItem() {
+  if (!selectedMenuItem.value || !itemQuantity.value) {
+    alert('Please select an item and quantity')
+    return
+  }
+  
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (order.status !== 'OPEN') {
+    alert('This order is locked and cannot be modified')
+    return
+  }
+  
+  const wasLoading = loading.value
+  loading.value = true
+  try {
+    const result = await ordersStore.addOrderItem({
+      order: order.id,
+      menu_item: selectedMenuItem.value,
+      quantity: itemQuantity.value,
+    })
+    
+    if (result.success) {
+      selectedMenuItem.value = ''
+      itemQuantity.value = 1
+      await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+      // Regenerate QR code if needed
+      await nextTick()
+      generateInstapayQR()
+    } else {
+      const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
+      alert('Failed to add item: ' + errorMsg)
+    }
+  } finally {
+    loading.value = wasLoading
+  }
+}
+
+async function addCustomItem() {
+  if (!customItemName.value || !customItemPrice.value) {
+    alert('Please enter item name and price')
+    return
+  }
+  
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (order.status !== 'OPEN') {
+    alert('This order is locked and cannot be modified')
+    return
+  }
+  
+  const wasLoading = loading.value
+  loading.value = true
+  try {
+    const result = await ordersStore.addOrderItem({
+      order: order.id,
+      custom_name: customItemName.value,
+      custom_price: customItemPrice.value,
+      quantity: 1,
+    })
+    
+    if (result.success) {
+      customItemName.value = ''
+      customItemPrice.value = 0
+      await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+      // Regenerate QR code if needed
+      await nextTick()
+      generateInstapayQR()
+    } else {
+      const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
+      alert('Failed to add custom item: ' + errorMsg)
+    }
+  } finally {
+    loading.value = wasLoading
+  }
+}
+
+async function removeItem(itemId) {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (order.status !== 'OPEN') {
+    alert('This order is locked and cannot be modified')
+    return
+  }
+  
+  if (!confirm('Remove this item?')) return
+  
+  loading.value = true
+  const result = await ordersStore.removeOrderItem(itemId)
+  
+  if (result.success) {
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+  } else {
+    alert('Failed to remove item')
+  }
+  loading.value = false
+}
+
+async function updateFees() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (order.status !== 'OPEN') {
+    alert('Fees can only be updated when order is open')
+    return
+  }
+  
+  loading.value = true
+  try {
+    await api.patch(`/orders/${order.id}/`, fees.value)
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+    alert('Fees updated successfully')
+  } catch (error) {
+    alert('Failed to update fees: ' + (error.response?.data?.detail || error.message))
+  }
+  loading.value = false
+}
+
+async function lockOrder() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (!confirm('Lock this order? Users won\'t be able to add or remove items.')) return
+  
+  loading.value = true
+  const result = await ordersStore.lockOrder(order.id)
+  if (result.success) {
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+    alert('Order locked successfully')
+  } else {
+    alert('Failed to lock order: ' + (result.error?.detail || JSON.stringify(result.error)))
+  }
+  loading.value = false
+}
+
+async function markOrdered() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (!confirm('Mark this order as ordered with the restaurant?')) return
+  
+  loading.value = true
+  const result = await ordersStore.markOrdered(order.id)
+  if (result.success) {
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+    alert('Order marked as ordered')
+  } else {
+    alert('Failed to mark as ordered: ' + (result.error?.detail || JSON.stringify(result.error)))
+  }
+  loading.value = false
+}
+
+async function closeOrder() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (!confirm('Close this order? This action cannot be undone.')) return
+  
+  loading.value = true
+  const result = await ordersStore.closeOrder(order.id)
+  if (result.success) {
+    alert('Order closed successfully')
+    router.push('/orders')
+  } else {
+    alert('Failed to close order: ' + (result.error?.detail || JSON.stringify(result.error)))
+    loading.value = false
+  }
+}
+
+async function deleteOrder() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (order.status !== 'OPEN') {
+    alert('Can only delete open orders')
+    return
+  }
+  
+  if (!confirm('Are you sure you want to delete this order? This action cannot be undone.')) return
+  
+  loading.value = true
+  try {
+    await api.delete(`/orders/${order.id}/`)
+    alert('Order deleted successfully')
+    router.push('/orders')
+  } catch (error) {
+    alert('Failed to delete order: ' + (error.response?.data?.error || error.response?.data?.detail || error.message))
+  }
+  loading.value = false
+}
+
+function copyShareMessage() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order || !order.share_message) {
+    alert('Share message not available')
+    return
+  }
+  navigator.clipboard.writeText(order.share_message)
+  alert('Share message copied to clipboard!')
+}
+
+async function markPaymentPaid(paymentId) {
+  if (!confirm('Mark this payment as paid?')) return
+  
+  loading.value = true
+  try {
+    const response = await api.post(`/payments/${paymentId}/mark_paid/`)
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+    alert('Payment marked as paid!')
+  } catch (error) {
+    alert('Failed to mark payment as paid')
+  }
+  loading.value = false
+}
+
+async function loadUsers() {
+  loadingUsers.value = true
+  const usersResult = await ordersStore.fetchUsers()
+  if (usersResult.success) {
+    allUsers.value = usersResult.data
+  }
+  loadingUsers.value = false
+}
+
+function toggleAssignUsers() {
+  showAssignUsers.value = !showAssignUsers.value
+  if (showAssignUsers.value && allUsers.value.length === 0) {
+    loadUsers()
+  }
+  // Set current assigned users when opening
+  if (showAssignUsers.value && currentOrder.value?.assigned_users_details) {
+    selectedUsers.value = currentOrder.value.assigned_users_details.map(u => u.id)
+  }
+  // Reset assignment fields
+  if (!showAssignUsers.value) {
+    assignmentItems.value = null
+    assignmentTotalCost.value = null
+  }
+}
+
+function selectAllUsers() {
+  selectedUsers.value = allUsers.value.map(user => user.id)
+}
+
+function deselectAllUsers() {
+  selectedUsers.value = []
+}
+
+async function updateAssignedUsers() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (order.status !== 'OPEN') {
+    alert('Can only update assigned users for open orders')
+    return
+  }
+  
+  if (selectedUsers.value.length === 0) {
+    alert('Please select at least one user')
+    return
+  }
+  
+  // Validate: if items or cost is provided, both must be provided
+  if ((assignmentItems.value && !assignmentTotalCost.value) || (assignmentTotalCost.value && !assignmentItems.value)) {
+    alert('Please provide both number of items and total cost, or leave both empty')
+    return
+  }
+  
+  loading.value = true
+  try {
+    const updateData = {
+      assigned_users: selectedUsers.value
+    }
+    
+    // If items and total cost are provided, include them for backend to create items
+    if (assignmentItems.value && assignmentTotalCost.value) {
+      updateData.assignment_items = assignmentItems.value
+      updateData.assignment_total_cost = assignmentTotalCost.value
+    }
+    
+    await api.patch(`/orders/${order.id}/`, updateData)
+    
+    // Reset assignment fields before reloading
+    const hadItems = assignmentItems.value && assignmentTotalCost.value
+    assignmentItems.value = null
+    assignmentTotalCost.value = null
+    
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+    
+    alert('Assigned users updated successfully' + (hadItems ? '. Items have been created and split evenly.' : ''))
+    showAssignUsers.value = false
+  } catch (error) {
+    alert('Failed to update assigned users: ' + (error.response?.data?.error || error.response?.data?.detail || error.message))
+  }
+  loading.value = false
+}
+
+async function transferCollector() {
+  if (!transferCollectorId.value) {
+    alert('Please select a new collector')
+    return
+  }
+  
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (!confirm(`Transfer collector role to the selected participant?`)) return
+  
+  loading.value = true
+  try {
+    await api.post(`/orders/${order.id}/transfer_collector/`, {
+      new_collector_id: transferCollectorId.value
+    })
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+    transferCollectorId.value = ''
+    alert('Collector role transferred successfully')
+  } catch (error) {
+    alert('Failed to transfer collector: ' + (error.response?.data?.error || error.message))
+  }
+  loading.value = false
+}
+
+function openInstapay() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (order.instapay_link) {
+    window.open(order.instapay_link, '_blank')
+  } else {
+    alert('Instapay link not set by collector')
+  }
+}
+
+function copyInstapayLink() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  if (order.instapay_link) {
+    navigator.clipboard.writeText(order.instapay_link)
+    alert('Instapay link copied to clipboard!')
+  }
+}
+
+function copyReceipt() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    alert('Order not loaded')
+    return
+  }
+  
+  const receipt = `📋 Order Receipt - ${order.restaurant_name}
+Order Code: ${order.code}
+Collector: ${order.collector_name}
+
+Items Total: ${formatPrice(order.total_items_cost)} EGP
+Delivery: ${formatPrice(order.delivery_fee)} EGP
+Tip: ${formatPrice(order.tip)} EGP
+Service Fee: ${formatPrice(order.service_fee)} EGP
+━━━━━━━━━━━━━━━━━━━━
+Total: ${formatPrice(order.total_cost)} EGP
+
+Payment Breakdown:
+${(order.payments || []).map(p => `  ${p.user_name}: ${formatPrice(p.amount)} EGP ${p.is_paid ? '✅' : '⏳'}`).join('\n')}
+
+${order.instapay_link ? `Pay via Instapay: ${order.instapay_link}` : ''}`
+  
+  navigator.clipboard.writeText(receipt)
+  alert('Receipt copied to clipboard! Share it in the group.')
+}
+</script>
+
