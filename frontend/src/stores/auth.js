@@ -11,9 +11,15 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
   const isManager = computed(() => user.value?.role === 'manager')
 
-  async function login(username, password) {
+  async function login(usernameOrEmail, password) {
     try {
-      const response = await api.post('/auth/login/', { username, password })
+      // Determine if input is email or username
+      const isEmail = usernameOrEmail.includes('@')
+      const loginData = isEmail 
+        ? { email: usernameOrEmail, password }
+        : { username: usernameOrEmail, password }
+      
+      const response = await api.post('/auth/login/', loginData)
       const { access, refresh } = response.data
       
       token.value = access
@@ -26,7 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (error) {
       return { 
         success: false, 
-        error: error.response?.data?.detail || 'Login failed' 
+        error: error.response?.data?.detail || error.response?.data?.non_field_errors?.[0] || 'Login failed' 
       }
     }
   }
@@ -69,6 +75,22 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function changePassword(oldPassword, newPassword, newPasswordConfirm) {
+    try {
+      const response = await api.post('/users/change_password/', {
+        old_password: oldPassword,
+        new_password: newPassword,
+        new_password_confirm: newPasswordConfirm
+      })
+      return { success: true, data: response.data }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data || 'Failed to change password'
+      }
+    }
+  }
+
   async function logout() {
     user.value = null
     token.value = null
@@ -93,6 +115,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     fetchUser,
     updateProfile,
+    changePassword,
   }
 })
 

@@ -165,12 +165,12 @@ SIMPLE_JWT = {
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "http://localhost:3000",
+    "http://localhost:19991",
     "http://127.0.0.1:5173",
-    "http://127.0.0.1:3000",
+    "http://127.0.0.1:19991",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
 
 # Frontend URL for share messages
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:19991')

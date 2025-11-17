@@ -40,9 +40,9 @@ An internal food-ordering portal to replace WhatsApp collections for daily team 
    ```
 
 3. **Access the application:**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - Admin: http://localhost:8000/admin
+   - Frontend: http://localhost:19991
+   - Backend API: http://localhost:19992
+   - Admin: http://localhost:19992/admin
 
 ## Manual Setup
 
@@ -102,7 +102,7 @@ An internal food-ordering portal to replace WhatsApp collections for daily team 
 
 3. **Create `.env` file (optional):**
    ```bash
-   VITE_API_BASE_URL=http://localhost:8000/api
+   VITE_API_BASE_URL=http://localhost:19992/api
    ```
 
 4. **Run development server:**

@@ -11,11 +11,12 @@ from .models import (
     OrderItem, Payment, AuditLog, FeePreset, Recommendation
 )
 from .serializers import (
-    UserSerializer, UserRegistrationSerializer, RestaurantSerializer,
-    MenuSerializer, MenuItemSerializer, CollectionOrderSerializer,
+    UserSerializer, UserRegistrationSerializer, LoginSerializer, ChangePasswordSerializer,
+    RestaurantSerializer, MenuSerializer, MenuItemSerializer, CollectionOrderSerializer,
     OrderItemSerializer, PaymentSerializer, AuditLogSerializer, FeePresetSerializer,
     RecommendationSerializer
 )
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class IsManagerOrReadOnly(permissions.BasePermission):
@@ -44,6 +45,33 @@ class UserViewSet(viewsets.ModelViewSet):
     def me(self, request):
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'])
+    def change_password(self, request):
+        """Change user password"""
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            user = request.user
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LoginView(APIView):
+    """Custom login view that accepts username or email"""
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RegisterView(APIView):

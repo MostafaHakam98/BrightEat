@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth import authenticate
 from django.conf import settings
 from .models import (
     User, Restaurant, Menu, MenuItem, CollectionOrder, 
@@ -12,8 +13,9 @@ class UserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'instapay_link', 'instapay_qr_code', 'instapay_qr_code_url']
-        read_only_fields = ['id', 'role', 'instapay_qr_code_url']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone', 'role', 
+                  'instapay_link', 'instapay_qr_code', 'instapay_qr_code_url', 'date_joined']
+        read_only_fields = ['id', 'date_joined']
     
     def get_instapay_qr_code_url(self, obj):
         if obj.instapay_qr_code:
@@ -43,18 +45,70 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return user
 
 
+class LoginSerializer(serializers.Serializer):
+    """Custom login serializer that accepts username or email"""
+    username = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    password = serializers.CharField(write_only=True, required=True)
+    
+    def validate(self, attrs):
+        username = attrs.get('username')
+        email = attrs.get('email')
+        password = attrs.get('password')
+        
+        if not username and not email:
+            raise serializers.ValidationError("Either username or email must be provided")
+        
+        if username and email:
+            raise serializers.ValidationError("Provide either username or email, not both")
+        
+        # Try to find user by username or email
+        try:
+            if username:
+                user = User.objects.get(username=username)
+            else:
+                user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Invalid credentials")
+        
+        # Authenticate with the found username
+        user = authenticate(username=user.username, password=password)
+        if not user:
+            raise serializers.ValidationError("Invalid credentials")
+        
+        attrs['user'] = user
+        return attrs
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Serializer for changing password"""
+    old_password = serializers.CharField(write_only=True, required=True)
+    new_password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    new_password_confirm = serializers.CharField(write_only=True, required=True)
+    
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError({"new_password": "New passwords don't match"})
+        return attrs
+    
+    def validate_old_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Old password is incorrect")
+        return value
+
+
 class RestaurantSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     
     class Meta:
         model = Restaurant
-        fields = ['id', 'name', 'description', 'created_at', 'created_by', 'created_by_name']
-        read_only_fields = ['id', 'created_at', 'created_by']
+        fields = ['id', 'name', 'description', 'created_by', 'created_by_name', 'created_at']
+        read_only_fields = ['id', 'created_by', 'created_at']
 
 
 class MenuSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
-    restaurant = serializers.PrimaryKeyRelatedField(queryset=Restaurant.objects.all(), required=True)
     
     class Meta:
         model = Menu
@@ -64,20 +118,17 @@ class MenuSerializer(serializers.ModelSerializer):
 
 class MenuItemSerializer(serializers.ModelSerializer):
     menu_name = serializers.CharField(source='menu.name', read_only=True)
-    restaurant_name = serializers.CharField(source='menu.restaurant.name', read_only=True)
-    menu = serializers.PrimaryKeyRelatedField(queryset=Menu.objects.all(), required=True)
     
     class Meta:
         model = MenuItem
-        fields = ['id', 'menu', 'menu_name', 'restaurant_name', 'name', 'description', 
-                  'price', 'is_available', 'created_at']
+        fields = ['id', 'menu', 'menu_name', 'name', 'description', 'price', 'is_available', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
 class FeePresetSerializer(serializers.ModelSerializer):
     class Meta:
         model = FeePreset
-        fields = ['id', 'name', 'delivery_fee', 'tip', 'service_fee', 'created_at']
+        fields = ['id', 'name', 'delivery_fee', 'tip', 'service_fee', 'fee_split_rule', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
@@ -149,11 +200,19 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
         return None
     
     def get_participants(self, obj):
-        return [{'id': u.id, 'username': u.username} for u in obj.get_participants()]
+        participants = obj.get_participants()
+        return [{'id': p.id, 'username': p.username, 'email': p.email} for p in participants]
     
     def get_payments(self, obj):
-        payments = Payment.objects.filter(order=obj)
-        return PaymentSerializer(payments, many=True).data
+        payments = obj.payments.all()
+        return [{
+            'id': p.id,
+            'user': p.user.id,
+            'user_name': p.user.username,
+            'amount': float(p.amount),
+            'is_paid': p.is_paid,
+            'paid_at': p.paid_at.isoformat() if p.paid_at else None
+        } for p in payments]
     
     def get_total_items_cost(self, obj):
         return float(obj.get_total_items_cost())
@@ -172,8 +231,10 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
             scheme = request.scheme
             host = request.get_host()
             # Replace backend port with frontend port if needed
-            if ':8000' in host:
-                host = host.replace(':8000', ':3000')
+            if ':19992' in host:
+                host = host.replace(':19992', ':19991')
+            elif ':8000' in host:
+                host = host.replace(':8000', ':19991')
             return f"{scheme}://{host}/join/{obj.code}"
         return f'/join/{obj.code}'
     
@@ -201,8 +262,7 @@ class PaymentSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Payment
-        fields = ['id', 'order', 'order_code', 'user', 'user_name', 'amount', 
-                  'is_paid', 'paid_at', 'created_at']
+        fields = ['id', 'order', 'order_code', 'user', 'user_name', 'amount', 'is_paid', 'paid_at', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
@@ -212,17 +272,15 @@ class AuditLogSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = AuditLog
-        fields = ['id', 'order', 'order_code', 'user', 'user_name', 'action', 
-                  'details', 'created_at']
+        fields = ['id', 'order', 'order_code', 'user', 'user_name', 'action', 'details', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
 class RecommendationSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True, allow_null=True)
-    
+
     class Meta:
         model = Recommendation
         fields = ['id', 'user', 'user_name', 'restaurant', 'restaurant_name', 'text', 'created_at']
         read_only_fields = ['id', 'user', 'created_at']
-

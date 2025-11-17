@@ -23,7 +23,8 @@ services:
     command: /app/start.sh
     volumes:
       - .:/app
-    # No exposed ports - only accessible internally
+    ports:
+      - "19992:8000"
     environment:
       - DEBUG=True
       - DB_NAME=brighteat
@@ -32,6 +33,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - SECRET_KEY=django-insecure-g@l$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$bda5*bixmkky
+      - FRONTEND_URL=http://localhost:19991
     depends_on:
       db:
         condition: service_healthy
@@ -41,7 +43,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=http://localhost:8000/api
+        - VITE_API_BASE_URL=http://localhost:19992/api
     ports:
       - "19991:80"
     depends_on:
