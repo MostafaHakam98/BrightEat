@@ -138,12 +138,13 @@ class OrderItemSerializer(serializers.ModelSerializer):
     menu_item = serializers.PrimaryKeyRelatedField(queryset=MenuItem.objects.all(), required=False, allow_null=True)
     custom_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     custom_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
     
     class Meta:
         model = OrderItem
         fields = ['id', 'order', 'user', 'user_name', 'menu_item', 'custom_name', 
                   'custom_price', 'quantity', 'unit_price', 'total_price', 'item_name', 'created_at']
-        read_only_fields = ['id', 'user', 'unit_price', 'total_price', 'created_at']
+        read_only_fields = ['id', 'unit_price', 'total_price', 'created_at']
     
     def get_item_name(self, obj):
         return obj.menu_item.name if obj.menu_item else obj.custom_name

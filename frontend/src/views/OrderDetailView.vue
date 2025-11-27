@@ -124,6 +124,33 @@
                   No menu items found for this order's menu. You can still add custom items below.
                 </p>
               </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  Assign to User
+                  <span class="text-xs text-gray-500 font-normal">
+                    ({{ selectedItemUser ? 'Assigned to ' + (allUsers.find(u => u.id === selectedItemUser)?.username || 'selected user') : 'You (default)' }})
+                  </span>
+                </label>
+                <select
+                  v-model="selectedItemUser"
+                  :disabled="currentOrder?.collector !== authStore.user?.id && !authStore.isManager"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  @focus="ensureUsersLoaded"
+                >
+                  <option :value="null">Me ({{ authStore.user?.username }})</option>
+                  <option v-for="user in allUsers" :key="user.id" :value="user.id">
+                    {{ user.username }}
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">
+                  <span v-if="currentOrder?.collector === authStore.user?.id || authStore.isManager">
+                    You can assign items to other users
+                  </span>
+                  <span v-else>
+                    Only collectors and managers can assign items to other users
+                  </span>
+                </p>
+              </div>
               <div class="flex space-x-2">
                 <input
                   v-model.number="itemQuantity"
@@ -142,27 +169,32 @@
               </div>
               <div class="border-t pt-4">
                 <p class="text-sm font-medium text-gray-700 mb-2">Or add custom item:</p>
-                <div class="flex space-x-2">
-                  <input
-                    v-model="customItemName"
-                    type="text"
-                    placeholder="Item name"
-                    class="flex-1 px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                  <input
-                    v-model.number="customItemPrice"
-                    type="number"
-                    step="0.01"
-                    placeholder="Price"
-                    class="w-24 px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                  <button
-                    @click="addCustomItem"
-                    :disabled="!customItemName || !customItemPrice"
-                    class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
-                  >
-                    Add Custom
-                  </button>
+                <div class="space-y-2">
+                  <div class="flex space-x-2">
+                    <input
+                      v-model="customItemName"
+                      type="text"
+                      placeholder="Item name"
+                      class="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                    />
+                    <input
+                      v-model.number="customItemPrice"
+                      type="number"
+                      step="0.01"
+                      placeholder="Price"
+                      class="w-24 px-3 py-2 border border-gray-300 rounded-md"
+                    />
+                    <button
+                      @click="addCustomItem"
+                      :disabled="!customItemName || !customItemPrice"
+                      class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
+                    >
+                      Add Custom
+                    </button>
+                  </div>
+                  <p class="text-xs text-gray-500">
+                    Custom item will be assigned to: {{ selectedItemUser ? (allUsers.find(u => u.id === selectedItemUser)?.username || 'selected user') : authStore.user?.username }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -621,6 +653,7 @@ const selectedMenuItem = ref('')
 const itemQuantity = ref(1)
 const customItemName = ref('')
 const customItemPrice = ref(0)
+const selectedItemUser = ref(null) // User to assign the item to (null = current user)
 const instapayQrCanvas = ref(null)
 const transferCollectorId = ref('')
 const showAssignUsers = ref(false)
@@ -747,7 +780,7 @@ async function loadOrder() {
     await nextTick()
     generateInstapayQR()
     
-    // Load users for assignment (any user can assign)
+    // Load users for assignment (any user can assign) and for item assignment
     if (ordersStore.currentOrder) {
       await loadUsers()
       // Set current assigned users
@@ -830,18 +863,32 @@ async function addMenuItem() {
     return
   }
   
+  // Check if user is trying to assign to someone else but doesn't have permission
+  if (selectedItemUser.value && order.collector !== authStore.user?.id && !authStore.isManager) {
+    alert('Only collectors and managers can assign items to other users')
+    return
+  }
+  
   const wasLoading = loading.value
   loading.value = true
   try {
-    const result = await ordersStore.addOrderItem({
+    const itemData = {
       order: order.id,
       menu_item: selectedMenuItem.value,
       quantity: itemQuantity.value,
-    })
+    }
+    
+    // Add user if specified and user has permission
+    if (selectedItemUser.value && (order.collector === authStore.user?.id || authStore.isManager)) {
+      itemData.user = selectedItemUser.value
+    }
+    
+    const result = await ordersStore.addOrderItem(itemData)
     
     if (result.success) {
       selectedMenuItem.value = ''
       itemQuantity.value = 1
+      selectedItemUser.value = null // Reset to default (current user)
       await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
       // Regenerate QR code if needed
       await nextTick()
@@ -872,19 +919,33 @@ async function addCustomItem() {
     return
   }
   
+  // Check if user is trying to assign to someone else but doesn't have permission
+  if (selectedItemUser.value && order.collector !== authStore.user?.id && !authStore.isManager) {
+    alert('Only collectors and managers can assign items to other users')
+    return
+  }
+  
   const wasLoading = loading.value
   loading.value = true
   try {
-    const result = await ordersStore.addOrderItem({
+    const itemData = {
       order: order.id,
       custom_name: customItemName.value,
       custom_price: customItemPrice.value,
       quantity: 1,
-    })
+    }
+    
+    // Add user if specified and user has permission
+    if (selectedItemUser.value && (order.collector === authStore.user?.id || authStore.isManager)) {
+      itemData.user = selectedItemUser.value
+    }
+    
+    const result = await ordersStore.addOrderItem(itemData)
     
     if (result.success) {
       customItemName.value = ''
       customItemPrice.value = 0
+      selectedItemUser.value = null // Reset to default (current user)
       await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
       // Regenerate QR code if needed
       await nextTick()
@@ -1062,6 +1123,12 @@ async function loadUsers() {
     allUsers.value = usersResult.data
   }
   loadingUsers.value = false
+}
+
+async function ensureUsersLoaded() {
+  if (allUsers.value.length === 0) {
+    await loadUsers()
+  }
 }
 
 function toggleAssignUsers() {

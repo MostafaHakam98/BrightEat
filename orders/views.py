@@ -612,7 +612,17 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         elif serializer.validated_data.get('custom_price'):
             serializer.validated_data['unit_price'] = serializer.validated_data['custom_price']
         
-        item = serializer.save(user=self.request.user)
+        # Determine which user to assign the item to
+        # If user is provided, only allow if requester is collector or manager
+        assigned_user = serializer.validated_data.get('user')
+        if assigned_user:
+            if order.collector != self.request.user and self.request.user.role != 'manager':
+                raise ValidationError("Only the collector or manager can assign items to other users")
+            user_to_assign = assigned_user
+        else:
+            user_to_assign = self.request.user
+        
+        item = serializer.save(user=user_to_assign)
         
         AuditLog.objects.create(
             order=order,
