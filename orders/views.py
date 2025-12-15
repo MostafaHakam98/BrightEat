@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from .models import (
     User, Restaurant, Menu, MenuItem, CollectionOrder, 
     OrderItem, Payment, AuditLog, FeePreset, Recommendation
@@ -682,7 +682,18 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         else:
             user_to_assign = self.request.user
         
-        item = serializer.save(user=user_to_assign)
+        try:
+            item = serializer.save(user=user_to_assign)
+        except IntegrityError as e:
+            # Handle unique_together constraint violation
+            if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
+                item_name = serializer.validated_data.get('menu_item')
+                if item_name:
+                    item_name = item_name.name
+                else:
+                    item_name = serializer.validated_data.get('custom_name', 'item')
+                raise ValidationError(f"This item ({item_name}) already exists for this user in this order. Please update the quantity instead.")
+            raise
         
         AuditLog.objects.create(
             order=order,

@@ -10,6 +10,21 @@ from .models import (
 )
 
 
+class OptionalUserField(serializers.PrimaryKeyRelatedField):
+    """Custom field that never validates as required, even if model requires it"""
+    def __init__(self, **kwargs):
+        kwargs['required'] = False
+        kwargs['allow_null'] = True
+        super().__init__(**kwargs)
+    
+    def validate_empty_values(self, data):
+        # Always treat empty values as valid (not required)
+        # Return (True, None) to indicate field is not provided and that's OK
+        if data is None or data == '' or data is serializers.empty:
+            return (True, None)
+        return super().validate_empty_values(data)
+
+
 class UserSerializer(serializers.ModelSerializer):
     instapay_qr_code_url = serializers.SerializerMethodField()
     
@@ -140,16 +155,83 @@ class OrderItemSerializer(serializers.ModelSerializer):
     menu_item = serializers.PrimaryKeyRelatedField(queryset=MenuItem.objects.all(), required=False, allow_null=True)
     custom_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     custom_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    user = OptionalUserField(queryset=User.objects.all())
     
     class Meta:
         model = OrderItem
         fields = ['id', 'order', 'user', 'user_name', 'menu_item', 'custom_name', 
                   'custom_price', 'quantity', 'unit_price', 'total_price', 'item_name', 'created_at']
         read_only_fields = ['id', 'unit_price', 'total_price', 'created_at']
+        extra_kwargs = {
+            'user': {'required': False, 'allow_null': True},
+            'custom_name': {'required': False, 'allow_blank': True, 'allow_null': True}
+        }
     
     def get_item_name(self, obj):
         return obj.menu_item.name if obj.menu_item else obj.custom_name
+    
+    def get_fields(self):
+        fields = super().get_fields()
+        # Explicitly set user field as not required
+        if 'user' in fields:
+            fields['user'].required = False
+            fields['user'].allow_null = True
+        return fields
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Explicitly set user field as not required (double-check)
+        if 'user' in self.fields:
+            self.fields['user'].required = False
+            self.fields['user'].allow_null = True
+    
+    def to_internal_value(self, data):
+        # Make data mutable if needed
+        if hasattr(data, '_mutable') and not data._mutable:
+            data = data.copy()
+        elif not isinstance(data, dict):
+            data = dict(data)
+        else:
+            data = data.copy()
+        
+        # Handle custom_name - set to empty string if not provided or empty
+        # The model doesn't allow null, only blank (empty string)
+        if 'custom_name' not in data or data.get('custom_name') == '':
+            data['custom_name'] = ''
+        
+        # For user, if not provided, don't include it in the data
+        # It will be set in perform_create
+        if 'user' not in data or data.get('user') == '' or data.get('user') is None:
+            if 'user' in data:
+                del data['user']
+        
+        return super().to_internal_value(data)
+    
+    def run_validation(self, data=serializers.empty):
+        # Temporarily mark user as not required before validation
+        user_field_required = None
+        if 'user' in self.fields:
+            user_field_required = self.fields['user'].required
+            self.fields['user'].required = False
+        
+        try:
+            return super().run_validation(data)
+        finally:
+            # Restore original required state
+            if user_field_required is not None and 'user' in self.fields:
+                self.fields['user'].required = user_field_required
+    
+    def validate_custom_name(self, value):
+        # Allow empty string or a valid value
+        # The model doesn't allow null, only blank (empty string)
+        if value is None:
+            return ''
+        return value
+    
+    def validate_user(self, value):
+        # User is optional in the serializer (will be set in perform_create if not provided)
+        # But if provided, it must be a valid user
+        return value
     
     def validate(self, attrs):
         # Either menu_item OR custom_name must be provided, but not both
@@ -162,6 +244,12 @@ class OrderItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Cannot specify both menu_item and custom_name")
         if has_custom and not attrs.get('custom_price'):
             raise serializers.ValidationError("custom_price is required when using custom_name")
+        
+        # If menu_item is provided, ensure custom_name is empty string
+        # The model doesn't allow null, only blank (empty string)
+        if has_menu_item:
+            attrs['custom_name'] = ''
+        
         return attrs
 
 
