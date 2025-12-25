@@ -58,9 +58,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     
     _animationController.forward();
     
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Check if user is already authenticated (auto-login from token)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      if (authProvider.isAuthenticated) {
+      // Ensure initialization is complete (in case it hasn't finished yet)
+      if (!authProvider.isAuthenticated && !authProvider.isLoading) {
+        await authProvider.initialize();
+      }
+      // If user is authenticated, redirect to home (bypass login)
+      if (authProvider.isAuthenticated && mounted) {
         context.go('/');
       }
     });

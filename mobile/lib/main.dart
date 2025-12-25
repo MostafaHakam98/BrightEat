@@ -42,14 +42,14 @@ void main() async {
   final authService = AuthService(apiService, prefs);
   final ordersService = OrdersService(apiService);
   
-  // Check if user is already logged in
+  // Check if user has a valid token (they will be auto-logged in by AuthProvider.initialize())
   final token = prefs.getString('access_token');
-  final isAuthenticated = token != null && token.isNotEmpty;
+  final hasToken = token != null && token.isNotEmpty;
   
   runApp(MyApp(
     authService: authService,
     ordersService: ordersService,
-    isAuthenticated: isAuthenticated,
+    isAuthenticated: hasToken,
   ));
 }
 
@@ -69,9 +69,6 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-// Global variable to track previous route for transition direction
-String? _previousRoute;
-
 class _MyAppState extends State<MyApp> {
   late final GoRouter _router;
 
@@ -89,7 +86,13 @@ class _MyAppState extends State<MyApp> {
           create: (_) => ThemeProvider(),
         ),
         ChangeNotifierProvider(
-          create: (_) => AuthProvider(widget.authService)..initialize(),
+          create: (_) {
+            final provider = AuthProvider(widget.authService);
+            // Initialize immediately to fetch user if token exists
+            // This will auto-login the user if they have a valid token
+            provider.initialize();
+            return provider;
+          },
         ),
         ChangeNotifierProvider(
           create: (_) => OrdersProvider(widget.ordersService),
@@ -126,30 +129,7 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  // Helper function to determine transition direction
-  int _getRouteIndex(String path) {
-    const routeOrder = ['/', '/orders', '/wheel', '/profile'];
-    return routeOrder.indexOf(path);
-  }
-
-  // Custom page class with direction-aware slide transition
-  Page<T> _buildSlideTransition<T extends Object?>(
-    Widget child,
-    GoRouterState state,
-    bool isForward,
-  ) {
-    return _DirectionalTransitionPage<T>(
-      key: state.pageKey,
-      child: child,
-      isForward: isForward,
-    );
-  }
-
   GoRouter _createRouter(bool isAuthenticated) {
-    // Capture instance methods for use in closures
-    final getRouteIndex = _getRouteIndex;
-    final buildSlideTransition = _buildSlideTransition;
-    
     return GoRouter(
       initialLocation: isAuthenticated ? '/' : '/login',
       routes: [
@@ -163,39 +143,11 @@ class _MyAppState extends State<MyApp> {
         ),
         GoRoute(
           path: '/',
-          pageBuilder: (context, state) {
-            final currentRoute = state.uri.path;
-            final previousRoute = _previousRoute;
-            _previousRoute = currentRoute;
-            
-            final previousIndex = previousRoute != null ? getRouteIndex(previousRoute) : -1;
-            final currentIndex = getRouteIndex('/');
-            final isForward = previousIndex != -1 && previousIndex < currentIndex;
-            
-            return buildSlideTransition(
-              const HomeScreen(),
-              state,
-              isForward,
-            );
-          },
+          builder: (context, state) => const HomeScreen(),
         ),
         GoRoute(
           path: '/orders',
-          pageBuilder: (context, state) {
-            final currentRoute = state.uri.path;
-            final previousRoute = _previousRoute;
-            _previousRoute = currentRoute;
-            
-            final previousIndex = previousRoute != null ? getRouteIndex(previousRoute) : -1;
-            final currentIndex = getRouteIndex('/orders');
-            final isForward = previousIndex != -1 && previousIndex < currentIndex;
-            
-            return buildSlideTransition(
-              const OrdersScreen(),
-              state,
-              isForward,
-            );
-          },
+          builder: (context, state) => const OrdersScreen(),
         ),
         GoRoute(
           path: '/orders/create',
@@ -225,21 +177,7 @@ class _MyAppState extends State<MyApp> {
         ),
         GoRoute(
           path: '/wheel',
-          pageBuilder: (context, state) {
-            final currentRoute = state.uri.path;
-            final previousRoute = _previousRoute;
-            _previousRoute = currentRoute;
-            
-            final previousIndex = previousRoute != null ? getRouteIndex(previousRoute) : -1;
-            final currentIndex = getRouteIndex('/wheel');
-            final isForward = previousIndex != -1 && previousIndex < currentIndex;
-            
-            return buildSlideTransition(
-              const RestaurantWheelScreen(),
-              state,
-              isForward,
-            );
-          },
+          builder: (context, state) => const RestaurantWheelScreen(),
         ),
         GoRoute(
           path: '/restaurants/:restaurantId/menus',
@@ -254,21 +192,7 @@ class _MyAppState extends State<MyApp> {
         ),
         GoRoute(
           path: '/profile',
-          pageBuilder: (context, state) {
-            final currentRoute = state.uri.path;
-            final previousRoute = _previousRoute;
-            _previousRoute = currentRoute;
-            
-            final previousIndex = previousRoute != null ? getRouteIndex(previousRoute) : -1;
-            final currentIndex = getRouteIndex('/profile');
-            final isForward = previousIndex != -1 && previousIndex < currentIndex;
-            
-            return buildSlideTransition(
-              const ProfileScreen(),
-              state,
-              isForward,
-            );
-          },
+          builder: (context, state) => const ProfileScreen(),
         ),
         GoRoute(
           path: '/pending-payments',
@@ -303,68 +227,6 @@ class _MyAppState extends State<MyApp> {
           return '/';
         }
         return null;
-      },
-    );
-  }
-}
-
-// Custom page class with direction-aware transitions
-class _DirectionalTransitionPage<T> extends Page<T> {
-  final Widget child;
-  final bool isForward;
-
-  const _DirectionalTransitionPage({
-    required LocalKey key,
-    required this.child,
-    required this.isForward,
-  }) : super(key: key);
-
-  @override
-  Route<T> createRoute(BuildContext context) {
-    return PageRouteBuilder<T>(
-      settings: this,
-      pageBuilder: (context, animation, secondaryAnimation) => child,
-      transitionDuration: const Duration(milliseconds: 400), // Slower transition
-      reverseTransitionDuration: const Duration(milliseconds: 400),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        const curve = Curves.easeInOutCubic;
-        
-        // Determine slide direction based on isForward
-        Offset begin;
-        if (isForward) {
-          // Moving forward (swipe left): slide from right to left
-          begin = const Offset(1.0, 0.0);
-        } else {
-          // Moving backward (swipe right): slide from left to right
-          begin = const Offset(-1.0, 0.0);
-        }
-        
-        const end = Offset.zero;
-        
-        final slideAnimation = Tween<Offset>(
-          begin: begin,
-          end: end,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: curve,
-        ));
-        
-        // Fade animation for smoother transition
-        final fadeAnimation = Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: curve,
-        ));
-        
-        return SlideTransition(
-          position: slideAnimation,
-          child: FadeTransition(
-            opacity: fadeAnimation,
-            child: child,
-          ),
-        );
       },
     );
   }

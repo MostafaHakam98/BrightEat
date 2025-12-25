@@ -132,8 +132,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       currentIndex = 4;
     }
 
-    final isHome = currentIndex == 2;
-
     return BottomNavigationBar(
       currentIndex: currentIndex,
       type: BottomNavigationBarType.fixed,
@@ -150,13 +148,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           icon: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isHome ? Colors.blue[700] : Colors.transparent,
+              color: Colors.blue[700],
               shape: BoxShape.circle,
             ),
-            child: Icon(
+            child: const Icon(
               Icons.home,
-              size: isHome ? 32 : 24,
-              color: isHome ? Colors.white : null,
+              size: 32,
+              color: Colors.white,
             ),
           ),
           label: 'Home',

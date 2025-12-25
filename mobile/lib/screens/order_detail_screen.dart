@@ -12,6 +12,7 @@ import '../providers/notifications_provider.dart';
 import '../models/order.dart';
 import '../models/order_item.dart';
 import '../models/menu_item.dart';
+import '../models/user.dart';
 import '../services/websocket_service.dart';
 
 class OrderDetailScreen extends StatefulWidget {
@@ -667,26 +668,27 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                  Text(
-                    user.username,
-                          style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                            color: Theme.of(context).textTheme.bodyLarge?.color,
-                          ),
-                        ),
-                        const Spacer(),
-                        Flexible(
+                        Expanded(
                           child: Text(
-                            '${subtotal.toStringAsFixed(2)} EGP',
+                            user.username,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: Colors.blue[700],
                               fontSize: 16,
+                              color: Theme.of(context).textTheme.bodyLarge?.color,
                             ),
-                            textAlign: TextAlign.end,
                             overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${subtotal.toStringAsFixed(2)} EGP',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[700],
+                            fontSize: 16,
+                          ),
+                          textAlign: TextAlign.end,
                         ),
                       ],
                     ),
@@ -1574,14 +1576,25 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final canAssignToOthers = isCollector || isManager;
 
     if (!mounted) return;
+    
+    // Fetch users if not already loaded
+    if (ordersProvider.users.isEmpty) {
+      await ordersProvider.fetchUsers();
+    }
+    
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: const Text('Add Menu Item'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: menuItems.isEmpty
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+            ),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: menuItems.isEmpty
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1611,25 +1624,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           items: menuItems.map((item) {
                             return DropdownMenuItem<MenuItem>(
                               value: item,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    item.name,
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                  Text(
-                                    '${item.price.toStringAsFixed(2)} EGP',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.blue[700],
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                item.name,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
                             );
                           }).toList(),
@@ -1661,34 +1660,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         ),
                         if (selectedItem != null) ...[
                           const SizedBox(height: 16),
-                          // User assignment dropdown
-                          if (canAssignToOthers && ordersProvider.users.isNotEmpty) ...[
-                            DropdownButtonFormField<int?>(
-                              decoration: InputDecoration(
-                                labelText: 'Assign to User',
-                                helperText: selectedUserId == null
-                                    ? 'You (${authProvider.user?.username ?? 'default'})'
-                                    : ordersProvider.users.firstWhere((u) => u.id == selectedUserId).username,
-                                border: const OutlineInputBorder(),
-                              ),
-                              isExpanded: true,
-                              value: selectedUserId,
-                              items: [
-                                DropdownMenuItem<int?>(
-                                  value: null,
-                                  child: Text('Me (${authProvider.user?.username ?? 'default'})'),
-                                ),
-                                ...ordersProvider.users.map((user) {
-                                  return DropdownMenuItem<int?>(
-                                    value: user.id,
-                                    child: Text(user.username),
-                                  );
-                                }),
-                              ],
-                              onChanged: (value) => setState(() => selectedUserId = value),
-                            ),
-                            const SizedBox(height: 16),
-                          ],
+                          // Searchable user assignment dropdown
+                          _buildSearchableUserDropdown(
+                            context: context,
+                            selectedUserId: selectedUserId,
+                            authProvider: authProvider,
+                            ordersProvider: ordersProvider,
+                            onUserSelected: (userId) => setState(() => selectedUserId = userId),
+                          ),
+                          const SizedBox(height: 16),
                           // Total display
                           Container(
                             padding: const EdgeInsets.all(12),
@@ -1727,6 +1707,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       ],
                     ),
                   ),
+            ),
           ),
           actions: [
             TextButton(
@@ -1751,8 +1732,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           itemData['note'] = noteController.text.trim();
                         }
                         
-                        // Add user assignment if specified and user has permission
-                        if (selectedUserId != null && canAssignToOthers) {
+                        // Add user assignment if specified
+                        if (selectedUserId != null) {
                           itemData['user'] = selectedUserId!;
                         }
                         
@@ -1793,20 +1774,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  void _showAddCustomItemDialog(CollectionOrder order, OrdersProvider ordersProvider) {
+  Future<void> _showAddCustomItemDialog(CollectionOrder order, OrdersProvider ordersProvider) async {
     final nameController = TextEditingController();
     final priceController = TextEditingController();
     final quantityController = TextEditingController(text: '1');
     final noteController = TextEditingController();
     int? selectedUserId;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final isCollector = order.collector.id == authProvider.user?.id;
-    final isManager = authProvider.isManager;
-    final canAssignToOthers = isCollector || isManager;
 
-    // Fetch users if needed
-    if (canAssignToOthers && ordersProvider.users.isEmpty) {
-      ordersProvider.fetchUsers();
+    // Fetch users if needed - await to ensure they're loaded
+    if (ordersProvider.users.isEmpty) {
+      await ordersProvider.fetchUsers();
     }
 
     showDialog(
@@ -1814,75 +1792,65 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: const Text('Add Custom Item'),
-          content: SingleChildScrollView(
-            child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Item Name',
-                    border: OutlineInputBorder(),
-              ),
-                ),
-                const SizedBox(height: 16),
-              TextField(
-                controller: priceController,
-                  decoration: const InputDecoration(
-                    labelText: 'Price (EGP)',
-                    border: OutlineInputBorder(),
-              ),
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                ),
-                const SizedBox(height: 16),
-              TextField(
-                controller: quantityController,
-                  decoration: const InputDecoration(
-                    labelText: 'Quantity',
-                    border: OutlineInputBorder(),
-                  ),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              // Notes field
-              TextField(
-                controller: noteController,
-                decoration: const InputDecoration(
-                  labelText: 'Note (optional)',
-                  border: OutlineInputBorder(),
-                  hintText: 'Add a note for this item',
-                ),
-                maxLines: 2,
-              ),
-              // User assignment dropdown
-              if (canAssignToOthers && ordersProvider.users.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                DropdownButtonFormField<int?>(
-                  decoration: InputDecoration(
-                    labelText: 'Assign to User',
-                    helperText: selectedUserId == null
-                        ? 'You (${authProvider.user?.username ?? 'default'})'
-                        : ordersProvider.users.firstWhere((u) => u.id == selectedUserId).username,
-                    border: const OutlineInputBorder(),
-                  ),
-                  isExpanded: true,
-                  value: selectedUserId,
-                  items: [
-                    DropdownMenuItem<int?>(
-                      value: null,
-                      child: Text('Me (${authProvider.user?.username ?? 'default'})'),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+            ),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Item Name',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                    ...ordersProvider.users.map((user) {
-                      return DropdownMenuItem<int?>(
-                        value: user.id,
-                        child: Text(user.username),
-                      );
-                    }),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: priceController,
+                      decoration: const InputDecoration(
+                        labelText: 'Price (EGP)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: quantityController,
+                      decoration: const InputDecoration(
+                        labelText: 'Quantity',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
+                    // Notes field
+                    TextField(
+                      controller: noteController,
+                      decoration: const InputDecoration(
+                        labelText: 'Note (optional)',
+                        border: OutlineInputBorder(),
+                        hintText: 'Add a note for this item',
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 16),
+                    // Searchable user assignment dropdown
+                    _buildSearchableUserDropdown(
+                      context: context,
+                      selectedUserId: selectedUserId,
+                      authProvider: authProvider,
+                      ordersProvider: ordersProvider,
+                      onUserSelected: (userId) => setState(() => selectedUserId = userId),
+                    ),
                   ],
-                  onChanged: (value) => setState(() => selectedUserId = value),
                 ),
-              ],
-            ],
+              ),
             ),
           ),
         actions: [
@@ -1920,8 +1888,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 itemData['note'] = noteController.text.trim();
               }
               
-              // Add user assignment if specified and user has permission
-              if (selectedUserId != null && canAssignToOthers) {
+              // Add user assignment if specified
+              if (selectedUserId != null) {
                 itemData['user'] = selectedUserId!;
               }
 
@@ -1962,12 +1930,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  void _showAssignUsersDialog(CollectionOrder order, OrdersProvider ordersProvider) {
+  Future<void> _showAssignUsersDialog(CollectionOrder order, OrdersProvider ordersProvider) async {
     Set<int> selectedUserIds = Set.from((order.assignedUsers ?? []).map((u) => u.id));
     
-    // Fetch users if needed
+    // Fetch users if needed - await to ensure they're loaded
     if (ordersProvider.users.isEmpty) {
-      ordersProvider.fetchUsers();
+      await ordersProvider.fetchUsers();
     }
 
     showDialog(
@@ -2088,6 +2056,82 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       ordersProvider: ordersProvider,
     );
   }
+
+  // Searchable user dropdown widget
+  Widget _buildSearchableUserDropdown({
+    required BuildContext context,
+    required int? selectedUserId,
+    required AuthProvider authProvider,
+    required OrdersProvider ordersProvider,
+    required Function(int?) onUserSelected,
+  }) {
+    // Build list of users with "Me" option first
+    // Filter out duplicate users (in case current user is also in the list)
+    final currentUserId = authProvider.user?.id;
+    final otherUsers = ordersProvider.users.where((u) => u.id != currentUserId).toList();
+    
+    final allUsers = [
+      User(
+        id: authProvider.user?.id ?? 0,
+        username: authProvider.user?.username ?? 'Me',
+        email: authProvider.user?.email ?? '',
+        role: 'user',
+      ),
+      ...otherUsers,
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Assign to User',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Theme.of(context).textTheme.bodyMedium?.color,
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<int?>(
+          decoration: InputDecoration(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          ),
+          isExpanded: true,
+          value: selectedUserId,
+          items: allUsers.map((user) {
+            final isMe = user.id == authProvider.user?.id;
+            return DropdownMenuItem<int?>(
+              value: isMe ? null : user.id,
+              child: Text(
+                isMe ? 'Me (${user.username})' : user.username,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          }).toList(),
+          onChanged: (value) => onUserSelected(value),
+        ),
+        if (allUsers.length == 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Loading users...',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 class _ExpandableItemCard extends StatefulWidget {
@@ -2112,82 +2156,305 @@ class _ExpandableItemCardState extends State<_ExpandableItemCard> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUserId = authProvider.user?.id;
-    final isItemOwner = widget.item.user.id == currentUserId;
+    final isCollector = widget.order.collector.id == currentUserId;
+    final isManager = authProvider.isManager;
+    final isOwner = widget.item.user.id == currentUserId;
+    final canRemove = widget.order.status == 'OPEN' && (isOwner || isCollector || isManager);
+    
+    final itemName = widget.item.menuItem?.name ?? widget.item.customName ?? 'Item';
     
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Theme.of(context).brightness == Brightness.dark
             ? Colors.grey[850]
             : Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: Theme.of(context).brightness == Brightness.dark
               ? Colors.grey[700]!
               : Colors.grey[300]!,
           width: 1,
         ),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: _isExpanded,
-          onExpansionChanged: (expanded) {
-            setState(() {
-              _isExpanded = expanded;
-            });
-          },
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          leading: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.blue[100],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: Text(
-                '${widget.item.quantity}',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue[900],
-                  fontSize: 16,
-                ),
-              ),
-            ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
+        ],
+      ),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _isExpanded = !_isExpanded;
+          });
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          children: [
+            // Collapsed/Header view
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Quantity badge
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.blue[100],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Center(
                       child: Text(
-                        widget.item.menuItem?.name ?? widget.item.customName ?? 'Item',
+                        '${widget.item.quantity}',
                         style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[900],
+                          fontSize: 18,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (isItemOwner && widget.order.status == 'OPEN') ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[600],
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'Your Item',
+                  ),
+                  const SizedBox(width: 12),
+                  // Item name and details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Item name - ensure it's always visible
+                        Text(
+                          itemName.isNotEmpty ? itemName : 'Unnamed Item',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 6),
+                        // Quantity, unit price, and "Yours" badge in a row
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${widget.item.quantity}x ${widget.item.unitPrice.toStringAsFixed(2)} EGP',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context).textTheme.bodySmall?.color ?? Colors.grey[600],
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                            if (isOwner && widget.order.status == 'OPEN') ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[600],
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'Yours',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Price and expand icon
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${widget.item.totalPrice.toStringAsFixed(2)} EGP',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.blue[700],
+                        ),
+                        textAlign: TextAlign.end,
+                      ),
+                      const SizedBox(height: 4),
+                      Icon(
+                        _isExpanded ? Icons.expand_less : Icons.expand_more,
+                        color: Theme.of(context).textTheme.bodyMedium?.color,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // Expanded details
+            if (_isExpanded) ...[
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.grey[700]!
+                    : Colors.grey[300]!,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Description
+                    if (widget.item.menuItem?.description != null &&
+                        widget.item.menuItem!.description!.isNotEmpty) ...[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.description_outlined,
+                            size: 18,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              widget.item.menuItem!.description!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Theme.of(context).textTheme.bodySmall?.color,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    // Note
+                    if (widget.item.note != null && widget.item.note!.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.orange[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange[200]!),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.note_outlined,
+                              size: 18,
+                              color: Colors.orange[700],
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                widget.item.note!,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.orange[900],
+                                  fontStyle: FontStyle.italic,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    // Subtotal
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.blue[900]!.withOpacity(0.2)
+                            : Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Subtotal:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).textTheme.bodyMedium?.color,
+                            ),
+                          ),
+                          Text(
+                            '${widget.item.totalPrice.toStringAsFixed(2)} EGP',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Remove button
+                    if (canRemove) ...[
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Remove Item'),
+                                content: Text(
+                                    'Are you sure you want to remove "$itemName"?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                    child: const Text('Remove', style: TextStyle(color: Colors.white)),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirm == true) {
+                              final success = await widget.ordersProvider.removeOrderItem(widget.item.id);
+                              if (success && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Item removed successfully'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              } else if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to remove item'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                          label: const Text('Remove Item', style: TextStyle(color: Colors.red)),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           ),
                         ),
                       ),
@@ -2195,207 +2462,10 @@ class _ExpandableItemCardState extends State<_ExpandableItemCard> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                '${widget.item.totalPrice.toStringAsFixed(2)} EGP',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: Colors.blue[700],
-                ),
-              ),
-            ],
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '${widget.item.quantity}x ${widget.item.unitPrice.toStringAsFixed(2)} EGP each',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).textTheme.bodySmall?.color,
-              ),
-            ),
-          ),
-          trailing: Icon(
-            _isExpanded ? Icons.expand_less : Icons.expand_more,
-            color: Theme.of(context).textTheme.bodyMedium?.color,
-          ),
-          children: [
-            if (widget.item.menuItem?.description != null &&
-                widget.item.menuItem!.description!.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.description_outlined,
-                      size: 16,
-                      color: Theme.of(context).textTheme.bodySmall?.color,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        widget.item.menuItem!.description!,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (widget.item.note != null && widget.item.note!.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.note_outlined,
-                      size: 16,
-                      color: Colors.orange[700],
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        widget.item.note!,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.orange[700],
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Subtotal:',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
-                  ),
-                  Text(
-                    '${widget.item.totalPrice.toStringAsFixed(2)} EGP',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue[700],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Delete button (if user has permission)
-            if (_canDeleteItem()) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _handleDeleteItem(context),
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Remove Item'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
             ],
           ],
         ),
       ),
     );
-  }
-
-  bool _canDeleteItem() {
-    // Can delete if order is OPEN
-    if (widget.order.status != 'OPEN') {
-      return false;
-    }
-
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final currentUserId = authProvider.user?.id;
-    final isManager = authProvider.isManager;
-    final isCollector = widget.order.collector.id == currentUserId;
-    final isItemOwner = widget.item.user.id == currentUserId;
-
-    // User can delete if:
-    // 1. They own the item, OR
-    // 2. They are the collector (and item doesn't belong to them), OR
-    // 3. They are a manager
-    return isItemOwner || (isCollector && !isItemOwner) || isManager;
-  }
-
-  Future<void> _handleDeleteItem(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove Item'),
-        content: const Text('Are you sure you want to remove this item from the order?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      try {
-        final success = await widget.ordersProvider.removeOrderItem(widget.item.id);
-        
-        if (context.mounted) {
-          if (success) {
-            // Refresh the order to get updated data
-            await widget.ordersProvider.fetchOrderByCode(widget.order.code);
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Item removed successfully'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to remove item'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: ${e.toString()}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
   }
 }

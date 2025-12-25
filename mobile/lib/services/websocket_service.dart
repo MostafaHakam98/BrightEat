@@ -48,10 +48,28 @@ class WebSocketService {
 
       // Convert http:// to ws:// or https:// to wss://
       String baseUrl = ApiService.baseUrl;
-      String wsUrl = baseUrl.replaceFirst('http://', 'ws://').replaceFirst('https://', 'wss://');
+      
+      // Remove trailing slash if present
+      if (baseUrl.endsWith('/')) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+      }
+      
+      // Convert protocol
+      String wsUrl;
+      if (baseUrl.startsWith('https://')) {
+        wsUrl = baseUrl.replaceFirst('https://', 'wss://');
+      } else if (baseUrl.startsWith('http://')) {
+        wsUrl = baseUrl.replaceFirst('http://', 'ws://');
+      } else {
+        // If no protocol, assume ws://
+        wsUrl = 'ws://$baseUrl';
+      }
+      
+      // Construct WebSocket URL
       wsUrl = '$wsUrl/ws/orders/${_currentOrderId}/?token=${Uri.encodeComponent(token)}';
 
       print('🔌 Connecting to WebSocket: $wsUrl');
+      print('🔌 Base URL was: ${ApiService.baseUrl}');
 
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
@@ -73,6 +91,12 @@ class WebSocketService {
         },
         onError: (error) {
           print('❌ WebSocket error: $error');
+          // Don't reconnect on server errors (500) - likely server-side issue
+          if (error.toString().contains('500') || error.toString().contains('HTTP status code: 500')) {
+            print('⚠️ Server returned 500 error - WebSocket endpoint may not be available');
+            print('⚠️ Disabling WebSocket reconnection for this session');
+            _reconnectAttempts = _maxReconnectAttempts; // Prevent reconnection attempts
+          }
           _handleDisconnect();
         },
         onDone: () {

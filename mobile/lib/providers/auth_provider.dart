@@ -16,7 +16,17 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> initialize() async {
     if (authService.isAuthenticated) {
-      await fetchUser();
+      _isLoading = true;
+      notifyListeners();
+      try {
+        await fetchUser();
+      } catch (e) {
+        // If token is invalid/expired, clear it
+        _user = null;
+      } finally {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -54,8 +64,14 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> fetchUser() async {
-    _user = await authService.getCurrentUser();
-    notifyListeners();
+    try {
+      _user = await authService.getCurrentUser();
+      notifyListeners();
+    } catch (e) {
+      // If fetching user fails (e.g., token expired), clear user
+      _user = null;
+      notifyListeners();
+    }
   }
 
   Future<bool> updateProfile(Map<String, dynamic> data) async {

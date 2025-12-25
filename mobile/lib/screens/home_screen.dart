@@ -32,8 +32,26 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        // Already on home, exit app
-        return true;
+        // Show exit confirmation dialog
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit OrderQ?'),
+            content: const Text('Are you sure you want to exit the application?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Exit', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+        return shouldExit ?? false;
       },
       child: Scaffold(
       appBar: AppBar(
@@ -674,8 +692,6 @@ class _HomeScreenState extends State<HomeScreen> {
       currentIndex = 4;
     }
 
-    final isHome = currentIndex == 2;
-
     return BottomNavigationBar(
       currentIndex: currentIndex,
       type: BottomNavigationBarType.fixed,
@@ -692,13 +708,13 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isHome ? Colors.blue[700] : Colors.transparent,
+              color: Colors.blue[700],
               shape: BoxShape.circle,
             ),
-            child: Icon(
+            child: const Icon(
               Icons.home,
-              size: isHome ? 32 : 24,
-              color: isHome ? Colors.white : null,
+              size: 32,
+              color: Colors.white,
             ),
           ),
           label: 'Home',

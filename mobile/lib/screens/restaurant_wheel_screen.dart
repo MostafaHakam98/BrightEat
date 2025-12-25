@@ -17,13 +17,17 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
     with TickerProviderStateMixin {
   late AnimationController _spinController;
   late AnimationController _pulseController;
+  late AnimationController _confettiController;
   late Animation<double> _rotationAnimation;
   late Animation<double> _pulseAnimation;
+  late Animation<double> _confettiAnimation;
   bool _isSpinning = false;
   Restaurant? _selectedRestaurant;
   Set<int> _selectedRestaurantIds = {};
   List<Restaurant> _availableRestaurants = [];
   double _finalRotation = 0.0;
+  List<Restaurant> _pickHistory = []; // History of recent picks
+  bool _isRestaurantListExpanded = false; // Track expansion state
 
   @override
   void initState() {
@@ -36,12 +40,19 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
+    _confettiController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
     
     _rotationAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _spinController, curve: Curves.easeOutCubic),
     );
     _pulseAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+    _confettiAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _confettiController, curve: Curves.easeOut),
     );
     
     // Add listener to stop pulse animation when spinning
@@ -62,6 +73,7 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
   void dispose() {
     _spinController.dispose();
     _pulseController.dispose();
+    _confettiController.dispose();
     super.dispose();
   }
 
@@ -111,15 +123,20 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
     final restaurant = selectedRestaurants[selectedIndex];
     
     // Calculate the angle to land on this restaurant
-    // Pointer is at top (pointing down at -π/2 or 270°)
+    // Pointer is at top (pointing down, which is at angle -π/2 or 270°)
+    // WheelPainter draws segments starting from -π/2 (top), so:
+    // - Segment 0 starts at -π/2
+    // - Segment i starts at i * sectorSize - π/2
+    // - Segment i's center is at: i * sectorSize - π/2 + sectorSize/2
     final sectorSize = (2 * math.pi) / selectedRestaurants.length;
-    // Target angle: center of the selected sector (measured from right, counter-clockwise)
-    final targetAngle = (selectedIndex * sectorSize) + (sectorSize / 2);
-    // Adjust for pointer position: pointer is at top (-π/2), so we need to rotate
-    // the target to align with the pointer. Since we start at -π/2, we add π/2 to get to 0
-    final adjustedAngle = targetAngle - (math.pi / 2);
-    // Calculate final rotation: base rotations + adjusted angle
-    _finalRotation = (baseRotations * 2 * math.pi) - adjustedAngle;
+    
+    // When we rotate clockwise by angle θ, a point at angle α moves to α - θ
+    // Segment selectedIndex's center is at: selectedIndex * sectorSize - π/2 + sectorSize/2
+    // We want it at -π/2 after rotation
+    // So: (selectedIndex * sectorSize - π/2 + sectorSize/2) - θ = -π/2
+    // Therefore: θ = selectedIndex * sectorSize + sectorSize/2
+    // We add base rotations for visual effect
+    _finalRotation = (baseRotations * 2 * math.pi) + (selectedIndex * sectorSize) + (sectorSize / 2);
 
     _spinController.reset();
     _spinController.forward().then((_) {
@@ -129,10 +146,22 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
       setState(() {
         _selectedRestaurant = restaurant;
         _isSpinning = false;
+        // Add to history (keep last 5)
+        _pickHistory.insert(0, restaurant);
+        if (_pickHistory.length > 5) {
+          _pickHistory.removeLast();
+        }
       });
 
       // Show celebration
+      _showConfetti();
       _showCelebration(restaurant);
+    });
+  }
+
+  void _showConfetti() {
+    _confettiController.forward(from: 0).then((_) {
+      _confettiController.reverse();
     });
   }
 
@@ -256,122 +285,7 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                // Restaurant selection
-                Card(
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.restaurant_menu, color: Colors.orange[700]),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Select Restaurants',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        // Separate row for select/deselect button
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              HapticFeedback.selectionClick();
-                              setState(() {
-                                if (_selectedRestaurantIds.length ==
-                                    _availableRestaurants.length) {
-                                  _selectedRestaurantIds.clear();
-                                } else {
-                                  _selectedRestaurantIds = Set.from(
-                                      _availableRestaurants.map((r) => r.id));
-                                }
-                              });
-                            },
-                            icon: Icon(
-                              _selectedRestaurantIds.length ==
-                                      _availableRestaurants.length
-                                  ? Icons.check_box_outlined
-                                  : Icons.check_box,
-                              size: 20,
-                            ),
-                            label: Text(
-                              _selectedRestaurantIds.length ==
-                                      _availableRestaurants.length
-                                  ? 'Deselect All'
-                                  : 'Select All',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 14,
-                              ),
-                              side: BorderSide(
-                                color: Colors.orange[700]!,
-                                width: 2,
-                              ),
-                              foregroundColor: Colors.orange[700],
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (_availableRestaurants.isEmpty)
-                          const Center(
-                            child: CircularProgressIndicator(),
-                          )
-                        else
-                          ..._availableRestaurants.map((restaurant) {
-                            final isSelected =
-                                _selectedRestaurantIds.contains(restaurant.id);
-                            return CheckboxListTile(
-                              value: isSelected,
-                              onChanged: (value) {
-                                HapticFeedback.selectionClick();
-                                setState(() {
-                                  if (value == true) {
-                                    _selectedRestaurantIds.add(restaurant.id);
-                                  } else {
-                                    _selectedRestaurantIds.remove(restaurant.id);
-                                  }
-                                  // Reset selection when restaurants change
-                                  _selectedRestaurant = null;
-                                });
-                              },
-                              title: Text(restaurant.name),
-                              activeColor: Colors.orange,
-                              contentPadding: EdgeInsets.zero,
-                            );
-                          }),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${_selectedRestaurantIds.length} restaurant(s) selected',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Wheel
+                // Wheel at the top
                 Card(
                   elevation: 3,
                   shape: RoundedRectangleBorder(
@@ -544,6 +458,213 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
                     ),
                   ),
                 ),
+                const SizedBox(height: 24),
+                // Restaurant selection (collapsible)
+                Card(
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Theme(
+                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      initiallyExpanded: _isRestaurantListExpanded,
+                      onExpansionChanged: (expanded) {
+                        setState(() {
+                          _isRestaurantListExpanded = expanded;
+                        });
+                        HapticFeedback.selectionClick();
+                      },
+                      tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                      leading: Icon(Icons.restaurant_menu, color: Colors.orange[700]),
+                      title: const Text(
+                        'Select Restaurants',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${_selectedRestaurantIds.length} restaurant(s) selected',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                      trailing: Icon(
+                        _isRestaurantListExpanded ? Icons.expand_less : Icons.expand_more,
+                        color: Colors.orange[700],
+                      ),
+                      children: [
+                        // Select/Deselect All button
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              HapticFeedback.selectionClick();
+                              setState(() {
+                                if (_selectedRestaurantIds.length ==
+                                    _availableRestaurants.length) {
+                                  _selectedRestaurantIds.clear();
+                                } else {
+                                  _selectedRestaurantIds = Set.from(
+                                      _availableRestaurants.map((r) => r.id));
+                                }
+                              });
+                            },
+                            icon: Icon(
+                              _selectedRestaurantIds.length ==
+                                      _availableRestaurants.length
+                                  ? Icons.check_box_outlined
+                                  : Icons.check_box,
+                              size: 20,
+                            ),
+                            label: Text(
+                              _selectedRestaurantIds.length ==
+                                      _availableRestaurants.length
+                                  ? 'Deselect All'
+                                  : 'Select All',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 14,
+                              ),
+                              side: BorderSide(
+                                color: Colors.orange[700]!,
+                                width: 2,
+                              ),
+                              foregroundColor: Colors.orange[700],
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        if (_availableRestaurants.isEmpty)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        else
+                          ..._availableRestaurants.map((restaurant) {
+                            final isSelected =
+                                _selectedRestaurantIds.contains(restaurant.id);
+                            return CheckboxListTile(
+                              value: isSelected,
+                              onChanged: (value) {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  if (value == true) {
+                                    _selectedRestaurantIds.add(restaurant.id);
+                                  } else {
+                                    _selectedRestaurantIds.remove(restaurant.id);
+                                  }
+                                  // Reset selection when restaurants change
+                                  _selectedRestaurant = null;
+                                });
+                              },
+                              title: Text(restaurant.name),
+                              activeColor: Colors.orange,
+                              contentPadding: EdgeInsets.zero,
+                            );
+                          }),
+                      ],
+                    ),
+                  ),
+                ),
+                // Pick History
+                if (_pickHistory.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Card(
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.history, color: Colors.teal[700]),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Recent Picks',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ..._pickHistory.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final restaurant = entry.value;
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.grey[800]
+                                    : Colors.grey[50],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: index == 0 ? Colors.teal[300]! : Colors.grey[300]!,
+                                  width: index == 0 ? 2 : 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: index == 0 ? Colors.teal[100] : Colors.grey[200],
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${index + 1}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: index == 0 ? Colors.teal[900] : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      restaurant.name,
+                                      style: TextStyle(
+                                        fontWeight: index == 0 ? FontWeight.bold : FontWeight.normal,
+                                        fontSize: index == 0 ? 16 : 14,
+                                        color: Theme.of(context).textTheme.bodyLarge?.color,
+                                      ),
+                                    ),
+                                  ),
+                                  if (index == 0)
+                                    Icon(Icons.star, color: Colors.teal[700], size: 20),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           );
@@ -570,8 +691,6 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
       currentIndex = 4;
     }
 
-    final isHome = currentIndex == 2;
-
     return BottomNavigationBar(
       currentIndex: currentIndex,
       type: BottomNavigationBarType.fixed,
@@ -588,13 +707,13 @@ class _RestaurantWheelScreenState extends State<RestaurantWheelScreen>
           icon: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isHome ? Colors.blue[700] : Colors.transparent,
+              color: Colors.blue[700],
               shape: BoxShape.circle,
             ),
-            child: Icon(
+            child: const Icon(
               Icons.home,
-              size: isHome ? 32 : 24,
-              color: isHome ? Colors.white : null,
+              size: 32,
+              color: Colors.white,
             ),
           ),
           label: 'Home',
