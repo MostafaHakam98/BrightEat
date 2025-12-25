@@ -273,7 +273,7 @@ To migrate data from one server/node to another:
 
 2. **Transfer to destination node:**
    ```bash
-   scp -r brighteat_export_* user@DESTINATION_IP:/path/to/BrightEat/
+   scp -r orderq_export_* user@DESTINATION_IP:/path/to/OrderQ/
    ```
 
 3. **Import on destination node:**
