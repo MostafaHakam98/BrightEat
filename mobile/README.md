@@ -1,6 +1,6 @@
-# BrightEat Mobile App
+# OrderQ Mobile App
 
-Flutter mobile application for iOS and Android that connects to the BrightEat Django backend.
+Flutter mobile application for iOS and Android that connects to the OrderQ Django backend.
 
 ## Features
 

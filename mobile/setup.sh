@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# BrightEat Mobile App Setup Script
+# OrderQ Mobile App Setup Script
 
 echo "========================================="
-echo "BrightEat Mobile App Setup"
+echo "OrderQ Mobile App Setup"
 echo "========================================="
 echo ""
 

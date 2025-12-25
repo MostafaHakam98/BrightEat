@@ -26,13 +26,13 @@ flutter doctor
 
 **Option A: Use the setup script**
 ```bash
-cd /home/mostafahakam/Desktop/Personal/BrightEat/mobile
+cd /home/mostafahakam/Desktop/Personal/OrderQ/mobile
 ./setup.sh
 ```
 
 **Option B: Manual installation**
 ```bash
-cd /home/mostafahakam/Desktop/Personal/BrightEat/mobile
+cd /home/mostafahakam/Desktop/Personal/OrderQ/mobile
 flutter pub get
 ```
 
@@ -97,7 +97,7 @@ flutter run -d <device-id>
 ## 📝 Current Configuration
 
 - **API URL**: `http://10.100.70.13:19992/api` ✅
-- **Project Location**: `/home/mostafahakam/Desktop/Personal/BrightEat/mobile`
+- **Project Location**: `/home/mostafahakam/Desktop/Personal/OrderQ/mobile`
 - **Flutter SDK**: Required (>=3.0.0)
 
 ## 🎯 Next Steps After Running

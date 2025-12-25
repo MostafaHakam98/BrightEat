@@ -1,5 +1,5 @@
-name: brighteat_mobile
-description: BrightEat mobile application for iOS and Android
+name: orderq_mobile
+description: OrderQ mobile application for iOS and Android
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -36,6 +36,9 @@ dependencies:
   
   # Date/Time pickers
   flutter_datetime_picker_plus: ^2.1.0
+  
+  # URL Launcher
+  url_launcher: ^6.2.5
 
 dev_dependencies:
   flutter_test:

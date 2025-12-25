@@ -1,6 +1,6 @@
 {
-    "name": "brighteat_mobile",
-    "short_name": "brighteat_mobile",
+    "name": "orderq_mobile",
+    "short_name": "orderq_mobile",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
