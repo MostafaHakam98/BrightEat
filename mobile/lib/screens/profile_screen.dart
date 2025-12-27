@@ -256,11 +256,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 title: const Text('Recommendations'),
                 onTap: () => context.push('/recommendations'),
               ),
-              if (authProvider.isManager) ...[
+              if (authProvider.isManager || authProvider.isAdmin) ...[
                 ListTile(
                   leading: const Icon(Icons.restaurant),
                   title: const Text('Restaurants'),
                   onTap: () => context.push('/restaurants'),
+                ),
+              ],
+              if (authProvider.isAdmin) ...[
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.person_add),
+                  title: const Text('Create User'),
+                  onTap: () => context.push('/register'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.people),
+                  title: const Text('User Management'),
+                  onTap: () => context.push('/users'),
                 ),
               ],
               const Divider(),

@@ -23,6 +23,7 @@ import 'screens/pending_payments_screen.dart';
 import 'screens/recommendations_screen.dart';
 import 'screens/restaurant_wheel_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/user_management_screen.dart';
 import 'providers/notifications_provider.dart';
 import 'services/notification_service.dart';
 
@@ -296,24 +297,45 @@ class _MyAppState extends State<MyApp> {
             reverseTransitionDuration: Duration.zero,
           ),
         ),
+        GoRoute(
+          path: '/users',
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            child: const UserManagementScreen(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) => child,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+        ),
       ],
       redirect: (context, state) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final isAuth = authProvider.isAuthenticated;
         final isManager = authProvider.isManager;
+        final isAdmin = authProvider.isAdmin;
         final isLoginRoute = state.uri.path == '/login';
         final isRegisterRoute = state.uri.path == '/register';
+        final isUsersRoute = state.uri.path == '/users';
         final requiresAuth = !isLoginRoute && !isRegisterRoute;
-        final requiresManager = state.uri.path.startsWith('/restaurants') ||
-            state.uri.path.startsWith('/register');
+        final requiresManager = state.uri.path.startsWith('/restaurants');
+        final requiresAdmin = isRegisterRoute || isUsersRoute;
 
         if (requiresAuth && !isAuth) {
           return '/login';
         }
-        if (isAuth && (isLoginRoute || isRegisterRoute)) {
+        if (isAuth && isLoginRoute) {
           return '/';
         }
-        if (requiresManager && !isManager) {
+        if (isAuth && isRegisterRoute && !isAdmin) {
+          return '/';
+        }
+        if (isAuth && isUsersRoute && !isAdmin) {
+          return '/';
+        }
+        if (requiresManager && !isManager && !isAdmin) {
+          return '/';
+        }
+        if (requiresAdmin && !isAdmin) {
           return '/';
         }
         return null;

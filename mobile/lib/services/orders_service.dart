@@ -396,6 +396,15 @@ class OrdersService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchPendingPaymentsToMe() async {
+    try {
+      final response = await apiService.getPendingPaymentsToMe();
+      return List<Map<String, dynamic>>.from(response.data);
+    } catch (e) {
+      return [];
+    }
+  }
+
   Future<bool> markPaymentAsPaid(int paymentId) async {
     try {
       await apiService.markPaymentAsPaid(paymentId);

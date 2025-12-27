@@ -21,6 +21,7 @@ class OrdersProvider extends ChangeNotifier {
   List<MenuItem> _menuItems = [];
   List<User> _users = [];
   List<Map<String, dynamic>> _pendingPayments = [];
+  List<Map<String, dynamic>> _pendingPaymentsToMe = [];
   bool _isLoading = false;
   bool _isLoadingMenus = false;
   bool _isLoadingMenuItems = false;
@@ -33,6 +34,7 @@ class OrdersProvider extends ChangeNotifier {
   List<MenuItem> get menuItems => _menuItems;
   List<User> get users => _users;
   List<Map<String, dynamic>> get pendingPayments => _pendingPayments;
+  List<Map<String, dynamic>> get pendingPaymentsToMe => _pendingPaymentsToMe;
   bool get isLoading => _isLoading;
   bool get isLoadingMenus => _isLoadingMenus;
   bool get isLoadingMenuItems => _isLoadingMenuItems;
@@ -244,6 +246,7 @@ class OrdersProvider extends ChangeNotifier {
 
   Future<void> fetchPendingPayments() async {
     _pendingPayments = await ordersService.fetchPendingPayments();
+    _pendingPaymentsToMe = await ordersService.fetchPendingPaymentsToMe();
     notifyListeners();
   }
 

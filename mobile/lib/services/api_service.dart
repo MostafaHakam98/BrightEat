@@ -250,6 +250,10 @@ class ApiService {
     return _dio.get('/orders/pending_payments/');
   }
 
+  Future<Response> getPendingPaymentsToMe() async {
+    return _dio.get('/orders/pending_payments_to_me/');
+  }
+
   Future<Response> getMonthlyReport({int? userId}) async {
     final params = userId != null ? <String, dynamic>{'user_id': userId} : <String, dynamic>{};
     return _dio.get('/orders/monthly_report/', queryParameters: params);
