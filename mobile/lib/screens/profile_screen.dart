@@ -63,26 +63,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (authProvider.user == null) return;
 
       final ordersProvider = Provider.of<OrdersProvider>(context, listen: false);
+      final user = authProvider.user!;
+      
+      // Always include username and other required fields when updating
+      final baseData = {
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.firstName ?? '',
+        'last_name': user.lastName ?? '',
+        'instapay_link': _instapayLinkController.text.trim(),
+      };
+
       FormData? formData;
 
-      if (_selectedQrImage != null || _instapayLinkController.text.isNotEmpty) {
-        formData = FormData.fromMap({
-          'instapay_link': _instapayLinkController.text.trim(),
-        });
-
-        if (_selectedQrImage != null) {
-          formData.files.add(MapEntry(
-            'instapay_qr_code',
-            await MultipartFile.fromFile(_selectedQrImage!.path),
-          ));
-        }
+      if (_selectedQrImage != null) {
+        // If we have an image, use FormData
+        formData = FormData.fromMap(baseData);
+        formData.files.add(MapEntry(
+          'instapay_qr_code',
+          await MultipartFile.fromFile(_selectedQrImage!.path),
+        ));
+        
+        await ordersProvider.ordersService.apiService.updateUser(
+          user.id,
+          {},
+          formData: formData,
+        );
+      } else {
+        // If no image, use regular data
+        await ordersProvider.ordersService.apiService.updateUser(
+          user.id,
+          baseData,
+        );
       }
-
-      await ordersProvider.ordersService.apiService.updateUser(
-        authProvider.user!.id,
-        {},
-        formData: formData,
-      );
       
       // Refresh user data
       await authProvider.fetchUser();
