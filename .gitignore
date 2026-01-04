@@ -231,3 +231,11 @@ frontend/dist/
 frontend/.vite/
 frontend/.env.local
 frontend/.env.*.local
+
+# SSL Certificates (never commit these!)
+ssl/
+certbot/
+*.pem
+*.key
+*.crt
+*.cert

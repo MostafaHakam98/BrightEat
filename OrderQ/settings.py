@@ -161,11 +161,24 @@ REST_FRAMEWORK = {
 
 # CSRF settings - Exempt API endpoints from CSRF
 # Read from environment variable as comma-separated list, fallback to defaults
-csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:19991,http://127.0.0.1:19991,http://10.100.70.13:19991')
+csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', 'https://localhost,https://127.0.0.1')
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
 
-# Exempt API endpoints from CSRF
-CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
+# HTTPS Security Settings
+USE_HTTPS = os.environ.get('USE_HTTPS', 'True') == 'True'
+if USE_HTTPS:
+    # Security settings for HTTPS
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = False  # Let nginx handle redirects
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+else:
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False
+
 CSRF_COOKIE_HTTPONLY = False
 
 # JWT Settings
@@ -179,20 +192,24 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:19991",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:19991",
-    "http://10.100.70.13:19991",
-]
+# CORS settings - Read from environment variable or use defaults
+cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if cors_origins_env:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
+else:
+    # Default origins (development)
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "https://localhost",
+        "http://127.0.0.1:5173",
+        "https://127.0.0.1",
+    ]
 
 # CORS settings - Allow all origins
 CORS_ALLOW_CREDENTIALS = True
 
 # Frontend URL for share messages
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:19991')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://localhost')
 
 # Cite API base URL
 CITE_API_BASE_URL = os.environ.get('CITE_API_BASE_URL', '')
