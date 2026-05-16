@@ -6,8 +6,16 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <h2 class="text-xl font-semibold mb-4 dark:text-white">Create New Order</h2>
+      <div id="create-order-form" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div class="flex items-center gap-2 mb-4">
+          <h2 class="text-xl font-semibold dark:text-white">Create New Order</h2>
+          <span
+            v-if="reorderBanner"
+            class="text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full"
+          >
+            ↺ {{ reorderBanner }}
+          </span>
+        </div>
         <form @submit.prevent="createOrder" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Restaurant</label>
@@ -119,7 +127,7 @@
                 <h3 class="text-lg font-semibold dark:text-white">{{ order.restaurant_name }}</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400">Code: {{ order.code }}</p>
                 <p class="text-sm text-gray-600 dark:text-gray-400">Collector: {{ order.collector_name }}</p>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Status: 
+                <p class="text-sm text-gray-600 dark:text-gray-400">Status:
                   <span :class="{
                     'text-green-600 dark:text-green-400': order.status === 'OPEN',
                     'text-yellow-600 dark:text-yellow-400': order.status === 'LOCKED',
@@ -128,6 +136,18 @@
                   }">
                     {{ order.status }}
                   </span>
+                </p>
+                <p
+                  v-if="countdown(order.cutoff_time)"
+                  class="text-sm font-medium mt-0.5"
+                  :class="{
+                    'text-gray-500 dark:text-gray-400': countdown(order.cutoff_time).urgency === 'normal',
+                    'text-amber-600 dark:text-amber-400': countdown(order.cutoff_time).urgency === 'warning',
+                    'text-red-600 dark:text-red-400 animate-pulse': countdown(order.cutoff_time).urgency === 'urgent',
+                    'text-gray-400 dark:text-gray-500': countdown(order.cutoff_time).urgency === 'passed',
+                  }"
+                >
+                  ⏱ {{ countdown(order.cutoff_time).text }}
                 </p>
                 <p v-if="getPendingPayment(order.id)" class="text-sm font-semibold text-yellow-600 dark:text-yellow-400 mt-1">
                   Pending: {{ formatPrice(getPendingPayment(order.id).amount) }} EGP
@@ -159,14 +179,22 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
 import { useAuthStore } from '../stores/auth'
+import { formatCountdown, useTick } from '../composables/useCountdown'
 import api from '../api'
 
 const router = useRouter()
+const route = useRoute()
 const ordersStore = useOrdersStore()
 const authStore = useAuthStore()
+
+const tick = useTick()
+function countdown(cutoffTime) {
+  void tick.value
+  return formatCountdown(cutoffTime)
+}
 
 const newOrder = ref({
   restaurant: '',
@@ -245,12 +273,26 @@ async function onRestaurantChange() {
   }
 }
 
+const reorderBanner = ref('')
+
 onMounted(async () => {
   loadingOrders.value = true
   await ordersStore.fetchRestaurants()
   await ordersStore.fetchOrders()
   await fetchPendingPayments()
   loadingOrders.value = false
+
+  // Pre-fill form when navigated here via ↺ Reorder
+  if (route.query.restaurant) {
+    newOrder.value.restaurant = String(route.query.restaurant)
+    await onRestaurantChange()
+    if (route.query.menu) {
+      newOrder.value.menu = parseInt(route.query.menu)
+    }
+    const restaurant = ordersStore.restaurants.find(r => r.id === parseInt(route.query.restaurant))
+    reorderBanner.value = restaurant ? `Re-ordering from ${restaurant.name}` : 'Re-ordering'
+    document.getElementById('create-order-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 })
 
 async function createOrder() {

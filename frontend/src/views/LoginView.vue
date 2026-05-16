@@ -6,9 +6,16 @@
         <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
           Sign in to OrderQ
         </h2>
+        <p v-if="hiveMode" class="mt-2 text-sm text-center text-indigo-600 dark:text-indigo-400 font-medium">
+          Enter your BSACAIPortal (Hive) username and password below
+        </p>
       </div>
+
       <form class="mt-8 space-y-6" @submit.prevent="handleLogin">
-        <div class="rounded-md shadow-sm -space-y-px">
+        <div
+          class="rounded-md shadow-sm -space-y-px transition-all"
+          :class="hiveMode ? 'ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-gray-900 rounded-md' : ''"
+        >
           <div>
             <label for="username" class="sr-only">Username or Email</label>
             <input
@@ -41,9 +48,43 @@
           <button
             type="submit"
             :disabled="loading"
-            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            :class="[
+              'group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50',
+              hiveMode
+                ? 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 focus:ring-indigo-500'
+                : 'bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 focus:ring-blue-500',
+            ]"
           >
-            {{ loading ? 'Signing in...' : 'Sign in' }}
+            {{ loading ? 'Signing in…' : hiveMode ? 'Sign in with Hive' : 'Sign in' }}
+          </button>
+        </div>
+
+        <!-- Divider -->
+        <div class="relative">
+          <div class="absolute inset-0 flex items-center">
+            <div class="w-full border-t border-gray-300 dark:border-gray-600"></div>
+          </div>
+          <div class="relative flex justify-center text-sm">
+            <span class="px-2 bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400">or</span>
+          </div>
+        </div>
+
+        <!-- Hive SSO button -->
+        <div>
+          <button
+            type="button"
+            @click="toggleHiveMode"
+            :class="[
+              'w-full flex items-center justify-center gap-2 py-2 px-4 border text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors',
+              hiveMode
+                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700',
+            ]"
+          >
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            {{ hiveMode ? 'Using Hive credentials ✓' : 'Continue with Hive (BSACAIPortal)' }}
           </button>
         </div>
 
@@ -58,7 +99,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
@@ -69,20 +110,27 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
+const hiveMode = ref(false)
+
+function toggleHiveMode() {
+  hiveMode.value = !hiveMode.value
+  if (hiveMode.value) {
+    nextTick(() => document.getElementById('username')?.focus())
+  }
+}
 
 async function handleLogin() {
   loading.value = true
   error.value = ''
-  
+
   const result = await authStore.login(username.value, password.value)
-  
+
   if (result.success) {
     router.push('/')
   } else {
     error.value = result.error
   }
-  
+
   loading.value = false
 }
 </script>
-

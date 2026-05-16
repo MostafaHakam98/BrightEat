@@ -54,24 +54,34 @@ class HiveAuthBackend:
         first_name = hive_user.get('first_name', '')
         last_name = hive_user.get('last_name', '')
 
-        user, created = User.objects.get_or_create(
-            username=hive_username,
-            defaults={
-                'email': email,
-                'first_name': first_name,
-                'last_name': last_name,
-                'role': 'user',
-            },
-        )
+        # Prefer linking by email so an existing BrightEat account with the
+        # same email is reused rather than creating a parallel account.
+        user = None
+        if email:
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                pass
 
-        if not created:
-            updates = {}
-            for field, value in [('email', email), ('first_name', first_name), ('last_name', last_name)]:
-                if value and getattr(user, field) != value:
-                    setattr(user, field, value)
-                    updates[field] = value
-            if updates:
-                user.save(update_fields=list(updates.keys()))
+        if user is None:
+            user, _ = User.objects.get_or_create(
+                username=hive_username,
+                defaults={
+                    'email': email,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'role': 'user',
+                },
+            )
+
+        # Sync name fields on every login
+        updates = {}
+        for field, value in [('first_name', first_name), ('last_name', last_name)]:
+            if value and getattr(user, field) != value:
+                setattr(user, field, value)
+                updates[field] = value
+        if updates:
+            user.save(update_fields=list(updates.keys()))
 
         return user
 
