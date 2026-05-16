@@ -38,7 +38,7 @@
       <div class="mb-6" v-if="currentOrder">
         <button
           @click="router.push('/orders')"
-          class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 mb-4 flex items-center"
+          class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 transition-colors"
         >
           ← Back to Orders
         </button>
@@ -65,13 +65,17 @@
             <p v-if="currentOrder?.is_private" class="text-xs text-gray-500 dark:text-gray-400 mt-1">🔒 Private Order</p>
           </div>
           <div class="text-right">
-            <div class="inline-block px-4 py-2 rounded-lg font-semibold" :class="{
+            <div class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold" :class="{
               'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300': currentOrder?.status === 'OPEN',
-              'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300': currentOrder?.status === 'LOCKED',
+              'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300': currentOrder?.status === 'LOCKED',
               'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300': currentOrder?.status === 'ORDERED',
               'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300': currentOrder?.status === 'CLOSED',
             }">
-              Status: {{ currentOrder?.status || 'UNKNOWN' }}
+              <span v-if="currentOrder?.status === 'OPEN'">✅</span>
+              <span v-else-if="currentOrder?.status === 'LOCKED'">🔒</span>
+              <span v-else-if="currentOrder?.status === 'ORDERED'">📦</span>
+              <span v-else-if="currentOrder?.status === 'CLOSED'">✓</span>
+              {{ currentOrder?.status || 'UNKNOWN' }}
             </div>
             <p v-if="currentOrder?.status && currentOrder.status !== 'OPEN'" class="text-sm text-gray-500 dark:text-gray-400 mt-2">
               {{ currentOrder.status === 'LOCKED' ? 'Order is locked. No items can be added or removed.' : '' }}
@@ -121,7 +125,7 @@
           </div>
 
           <!-- Add Items Section (only if OPEN) -->
-          <div v-if="currentOrder?.status === 'OPEN'" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div v-if="currentOrder?.status === 'OPEN'" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Add Items to Order</h2>
             <div class="space-y-4">
               <div>
@@ -248,7 +252,7 @@
           </div>
 
           <!-- Order Items -->
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Order Items</h2>
             <div v-if="!currentOrder?.items || currentOrder.items.length === 0" class="text-gray-500 dark:text-gray-400 text-center py-4">
               No items yet. {{ currentOrder?.status === 'OPEN' ? 'Add items above!' : '' }}
@@ -302,7 +306,7 @@
         <!-- Sidebar -->
         <div class="space-y-6">
           <!-- Order Summary -->
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 dark:text-white">Summary</h2>
             <div class="space-y-2 text-sm">
               <div class="flex justify-between dark:text-gray-300">
@@ -329,7 +333,7 @@
           </div>
 
           <!-- Actions (Collector and Manager) -->
-          <div v-if="currentOrder?.collector === authStore.user?.id || authStore.isManager" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div v-if="currentOrder?.collector === authStore.user?.id || authStore.isManager" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Actions & Fees</h2>
             <p v-if="currentOrder?.collector === authStore.user?.id" class="text-sm text-gray-600 dark:text-gray-400 mb-4">
               <strong>How it works:</strong> You (the collector) pay the restaurant for everyone's items plus fees. 
@@ -388,7 +392,7 @@
               <button
                 v-if="currentOrder?.status === 'OPEN' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
                 @click="lockOrder"
-                class="w-full mt-2 bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full mt-2 bg-amber-500 dark:bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-600 dark:hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors"
               >
                 🔒 Lock Order
               </button>
@@ -396,7 +400,7 @@
               <button
                 v-if="!authStore.isManager && currentOrder?.status === 'OPEN' && currentOrder?.collector === authStore.user?.id"
                 @click="deleteOrder"
-                class="w-full mt-2 bg-red-800 dark:bg-red-700 text-white px-4 py-2 rounded-md hover:bg-red-900 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full mt-2 bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
               >
                 🗑️ Delete Order
               </button>
@@ -404,7 +408,7 @@
               <button
                 v-if="authStore.isManager && currentOrder?.collector === authStore.user?.id"
                 @click="deleteOrder"
-                class="w-full mt-2 bg-red-800 dark:bg-red-700 text-white px-4 py-2 rounded-md hover:bg-red-900 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full mt-2 bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
               >
                 🗑️ Delete Order (Manager)
               </button>
@@ -525,7 +529,7 @@
               <button
                 v-if="currentOrder?.status === 'LOCKED' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
                 @click="unlockOrder"
-                class="w-full mt-2 bg-orange-600 dark:bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-700 dark:hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
+                class="w-full mt-2 bg-orange-500 dark:bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-600 dark:hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
               >
                 🔓 Unlock Order
               </button>
@@ -541,7 +545,7 @@
               <button
                 v-if="currentOrder?.status === 'ORDERED' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
                 @click="closeOrder"
-                class="w-full bg-gray-600 dark:bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-700 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
               >
                 🔚 Close Order
               </button>
@@ -549,33 +553,33 @@
           </div>
 
           <!-- Manager-only actions section (always visible for managers) -->
-          <div v-if="authStore.isManager" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div v-if="authStore.isManager" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Manager Actions</h2>
             <div class="space-y-2">
               <button
                 v-if="currentOrder?.status === 'OPEN'"
                 @click="lockOrder"
-                class="w-full bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-amber-500 dark:bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-600 dark:hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors"
               >
                 🔒 Lock Order
               </button>
               <button
                 v-if="currentOrder?.status === 'LOCKED'"
                 @click="unlockOrder"
-                class="w-full bg-orange-600 dark:bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-700 dark:hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-orange-500 dark:bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-600 dark:hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
               >
                 🔓 Unlock Order
               </button>
               <button
                 v-if="currentOrder?.status === 'ORDERED'"
                 @click="closeOrder"
-                class="w-full bg-gray-600 dark:bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-700 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
               >
                 🔚 Close Order
               </button>
               <button
                 @click="deleteOrder"
-                class="w-full bg-red-800 dark:bg-red-700 text-white px-4 py-2 rounded-md hover:bg-red-900 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
               >
                 🗑️ Delete Order
               </button>
@@ -583,7 +587,7 @@
           </div>
 
           <!-- Share Message -->
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Share Message</h2>
             <textarea
               :value="currentOrder?.share_message || ''"
@@ -597,10 +601,15 @@
             >
               Copy Message
             </button>
+            <!-- Join QR code -->
+            <div v-if="currentOrder?.join_url" class="mt-4 flex flex-col items-center gap-2">
+              <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Scan to join</p>
+              <canvas ref="joinQrCanvas" class="rounded border border-gray-200 dark:border-gray-600"></canvas>
+            </div>
           </div>
 
           <!-- Payment Breakdown (if locked) -->
-          <div v-if="currentOrder?.status !== 'OPEN' && currentOrder?.payments && currentOrder.payments.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div v-if="currentOrder?.status !== 'OPEN' && currentOrder?.payments && currentOrder.payments.length > 0" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 dark:text-white">Payment Breakdown</h2>
             <!-- Show message if only collector's payment exists and it's paid -->
             <div v-if="currentOrder.payments.length === 1 && currentOrder.payments[0].user === currentOrder?.collector && currentOrder.payments[0].is_paid" class="p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded">
@@ -671,7 +680,7 @@
           </div>
 
           <!-- Instapay QR Code (if locked/ordered/closed and collector has Instapay link or QR code) -->
-          <div v-if="currentOrder?.status !== 'OPEN' && (currentOrder?.collector_instapay_link || currentOrder?.collector_instapay_qr_code_url)" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div v-if="currentOrder?.status !== 'OPEN' && (currentOrder?.collector_instapay_link || currentOrder?.collector_instapay_qr_code_url)" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 dark:text-white">Pay via Instapay</h2>
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Scan the QR code below to pay {{ currentOrder?.collector_name }} via Instapay</p>
             <div class="flex flex-col items-center">
@@ -706,7 +715,7 @@
           </div>
           
           <!-- Receipt View (if ordered) -->
-          <div v-if="currentOrder?.status === 'ORDERED' || currentOrder?.status === 'CLOSED'" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div v-if="currentOrder?.status === 'ORDERED' || currentOrder?.status === 'CLOSED'" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 dark:text-white">Order Receipt</h2>
             <div class="space-y-2 text-sm">
               <div class="flex justify-between border-b dark:border-gray-700 pb-2 dark:text-gray-300">
@@ -844,6 +853,7 @@ const customItemPrice = ref(0)
 const customItemNote = ref('')
 const selectedItemUser = ref(null) // User to assign the item to (null = current user)
 const instapayQrCanvas = ref(null)
+const joinQrCanvas = ref(null)
 const transferCollectorId = ref('')
 const showAssignUsers = ref(false)
 const selectedUsers = ref([])
@@ -1008,12 +1018,20 @@ async function loadOrder() {
         fee_split_rule: ordersStore.currentOrder.fee_split_rule || 'equal',
         instapay_link: ordersStore.currentOrder.instapay_link || '',
       }
-      console.log('Fees set:', fees.value)
+      // Auto-fill preset when collector opens an order with all-zero fees
+      if (ordersStore.currentOrder.status === 'OPEN' &&
+          ordersStore.currentOrder.collector === authStore.user?.id) {
+        const preset = loadFeePreset(ordersStore.currentOrder.restaurant)
+        if (preset && fees.value.delivery_fee === 0 && fees.value.tip === 0 && fees.value.service_fee === 0) {
+          fees.value = { ...fees.value, ...preset }
+        }
+      }
     }
     
-    // Generate QR code for collector's Instapay link
+    // Generate QR codes
     await nextTick()
     generateInstapayQR()
+    generateJoinQR()
     
     // Load users for assignment (any user can assign) and for item assignment
     if (ordersStore.currentOrder) {
@@ -1058,6 +1076,66 @@ async function loadOrder() {
     error.value = 'Failed to load order: ' + (err.message || 'Unknown error')
   } finally {
     loading.value = false
+  }
+}
+
+// --- Fee presets (localStorage, keyed by restaurant ID) ---
+function loadFeePreset(restaurantId) {
+  const raw = localStorage.getItem(`fee_preset_${restaurantId}`)
+  return raw ? JSON.parse(raw) : null
+}
+function saveFeePreset(restaurantId, f) {
+  localStorage.setItem(`fee_preset_${restaurantId}`, JSON.stringify({
+    delivery_fee: f.delivery_fee,
+    tip: f.tip,
+    service_fee: f.service_fee,
+    fee_split_rule: f.fee_split_rule,
+  }))
+}
+
+// --- Simple canvas confetti ---
+function launchConfetti() {
+  const canvas = document.createElement('canvas')
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999'
+  document.body.appendChild(canvas)
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
+  const ctx = canvas.getContext('2d')
+  const colors = ['#6366F1','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#14B8A6','#F97316']
+  const pieces = Array.from({ length: 100 }, () => ({
+    x: Math.random() * canvas.width, y: Math.random() * canvas.height - canvas.height,
+    r: Math.random() * 6 + 4, d: Math.random() * 80,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    tiltAngle: 0, tiltInc: Math.random() * 0.07 + 0.05,
+  }))
+  let angle = 0
+  const start = Date.now()
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    angle += 0.01
+    pieces.forEach(p => {
+      p.tiltAngle += p.tiltInc
+      p.y += (Math.cos(angle + p.d) + 3 + p.r / 2) * 0.9
+      p.x += Math.sin(angle) * 0.9
+      ctx.beginPath()
+      ctx.lineWidth = p.r / 2
+      ctx.strokeStyle = p.color
+      ctx.moveTo(p.x + Math.sin(p.tiltAngle) * 15 + p.r / 4, p.y)
+      ctx.lineTo(p.x + Math.sin(p.tiltAngle) * 15, p.y + Math.sin(p.tiltAngle) * 15 + p.r / 4)
+      ctx.stroke()
+    })
+    if (Date.now() - start < 2800) requestAnimationFrame(draw)
+    else document.body.removeChild(canvas)
+  }
+  draw()
+}
+
+async function generateJoinQR() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (order?.join_url && joinQrCanvas.value) {
+    try {
+      await QRCode.toCanvas(joinQrCanvas.value, order.join_url, { width: 160, margin: 1 })
+    } catch (e) { console.error('Join QR failed', e) }
   }
 }
 
@@ -1384,8 +1462,7 @@ async function updateFees() {
   loading.value = true
   try {
     await api.patch(`/orders/${order.id}/`, fees.value)
-    // Don't manually refetch - WebSocket will broadcast the update automatically
-    // await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+    saveFeePreset(order.restaurant, fees.value)
     alert('Fees updated successfully')
   } catch (error) {
     alert('Failed to update fees: ' + (error.response?.data?.detail || error.message))
@@ -1445,8 +1522,8 @@ async function closeOrder() {
   loading.value = true
   const result = await ordersStore.closeOrder(order.id)
   if (result.success) {
-    alert('Order closed successfully')
-    router.push('/orders')
+    launchConfetti()
+    setTimeout(() => router.push('/orders'), 2800)
   } else {
     alert('Failed to close order: ' + (result.error?.detail || JSON.stringify(result.error)))
     loading.value = false

@@ -6,7 +6,7 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-      <div id="create-order-form" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div id="create-order-form" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm hover:shadow-md transition-shadow p-6">
         <div class="flex items-center gap-2 mb-4">
           <h2 class="text-xl font-semibold dark:text-white">Create New Order</h2>
           <span
@@ -17,19 +17,28 @@
           </span>
         </div>
         <form @submit.prevent="createOrder" class="space-y-4">
-          <div>
+          <div class="relative" ref="restaurantDropdownRef">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Restaurant</label>
-            <select
-              v-model="newOrder.restaurant"
-              @change="onRestaurantChange"
-              required
+            <input
+              v-model="restaurantSearch"
+              @focus="restaurantOpen = true"
+              @input="restaurantOpen = true"
+              type="text"
+              autocomplete="off"
+              placeholder="Search restaurant…"
               class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            />
+            <ul
+              v-if="restaurantOpen && filteredRestaurants.length"
+              class="absolute z-20 mt-1 w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto"
             >
-              <option value="">Select restaurant</option>
-              <option v-for="restaurant in ordersStore.restaurants" :key="restaurant.id" :value="restaurant.id">
-                {{ restaurant.name }}
-              </option>
-            </select>
+              <li
+                v-for="r in filteredRestaurants"
+                :key="r.id"
+                @mousedown.prevent="selectRestaurant(r)"
+                class="px-3 py-2 cursor-pointer text-sm text-gray-800 dark:text-gray-100 hover:bg-blue-50 dark:hover:bg-gray-600"
+              >{{ r.name }}</li>
+            </ul>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -76,14 +85,14 @@
           <button
             type="submit"
             :disabled="loading"
-            class="w-full bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50"
+            class="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 font-medium transition-colors"
           >
             {{ loading ? 'Creating...' : 'Create Order' }}
           </button>
         </form>
       </div>
 
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm hover:shadow-md transition-shadow p-6">
         <h2 class="text-xl font-semibold mb-4 dark:text-white">Join Order</h2>
         <form @submit.prevent="joinOrder" class="space-y-4">
           <div>
@@ -107,7 +116,7 @@
       </div>
     </div>
 
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm">
       <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
         <h2 class="text-xl font-semibold dark:text-white">Active Orders</h2>
       </div>
@@ -120,7 +129,13 @@
           <div
             v-for="order in activeOrders"
             :key="order.id"
-            class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition dark:bg-gray-700"
+            :class="[
+              'border-l-4 rounded-lg p-4 pl-5 hover:shadow-md transition dark:bg-gray-700 border border-gray-200 dark:border-gray-600',
+              order.status === 'OPEN' ? 'border-l-green-500' : '',
+              order.status === 'LOCKED' ? 'border-l-amber-500' : '',
+              order.status === 'ORDERED' ? 'border-l-blue-500' : '',
+              order.status === 'CLOSED' ? 'border-l-gray-400' : '',
+            ]"
           >
             <div class="flex justify-between items-start">
               <div>
@@ -137,17 +152,18 @@
                     {{ order.status }}
                   </span>
                 </p>
-                <p
-                  v-if="countdown(order.cutoff_time)"
-                  class="text-sm font-medium mt-0.5"
-                  :class="{
-                    'text-gray-500 dark:text-gray-400': countdown(order.cutoff_time).urgency === 'normal',
-                    'text-amber-600 dark:text-amber-400': countdown(order.cutoff_time).urgency === 'warning',
-                    'text-red-600 dark:text-red-400 animate-pulse': countdown(order.cutoff_time).urgency === 'urgent',
-                    'text-gray-400 dark:text-gray-500': countdown(order.cutoff_time).urgency === 'passed',
-                  }"
-                >
-                  ⏱ {{ countdown(order.cutoff_time).text }}
+                <p v-if="countdown(order.cutoff_time)" class="mt-1">
+                  <span
+                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                    :class="{
+                      'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': countdown(order.cutoff_time).urgency === 'normal',
+                      'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300': countdown(order.cutoff_time).urgency === 'warning',
+                      'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 animate-pulse': countdown(order.cutoff_time).urgency === 'urgent',
+                      'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500': countdown(order.cutoff_time).urgency === 'passed',
+                    }"
+                  >
+                    ⏱ {{ countdown(order.cutoff_time).text }}
+                  </span>
                 </p>
                 <p v-if="getPendingPayment(order.id)" class="text-sm font-semibold text-yellow-600 dark:text-yellow-400 mt-1">
                   Pending: {{ formatPrice(getPendingPayment(order.id).amount) }} EGP
@@ -156,7 +172,7 @@
               <div class="flex flex-col gap-2">
                 <router-link
                   :to="`/orders/${order.code}`"
-                  class="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 text-center text-sm"
+                  class="bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 text-center text-sm font-medium transition-colors"
                 >
                   View
                 </router-link>
@@ -178,7 +194,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
 import { useAuthStore } from '../stores/auth'
@@ -275,6 +291,31 @@ async function onRestaurantChange() {
 
 const reorderBanner = ref('')
 
+// Restaurant type-ahead search
+const restaurantSearch = ref('')
+const restaurantOpen = ref(false)
+const restaurantDropdownRef = ref(null)
+
+const filteredRestaurants = computed(() => {
+  const q = restaurantSearch.value.toLowerCase()
+  return ordersStore.restaurants.filter(r => r.name.toLowerCase().includes(q))
+})
+
+function selectRestaurant(r) {
+  newOrder.value.restaurant = String(r.id)
+  restaurantSearch.value = r.name
+  restaurantOpen.value = false
+  onRestaurantChange()
+}
+
+function handleOutsideClick(e) {
+  if (restaurantDropdownRef.value && !restaurantDropdownRef.value.contains(e.target)) {
+    restaurantOpen.value = false
+  }
+}
+onMounted(() => document.addEventListener('mousedown', handleOutsideClick))
+onBeforeUnmount(() => document.removeEventListener('mousedown', handleOutsideClick))
+
 onMounted(async () => {
   loadingOrders.value = true
   await ordersStore.fetchRestaurants()
@@ -290,6 +331,7 @@ onMounted(async () => {
       newOrder.value.menu = parseInt(route.query.menu)
     }
     const restaurant = ordersStore.restaurants.find(r => r.id === parseInt(route.query.restaurant))
+    if (restaurant) restaurantSearch.value = restaurant.name
     reorderBanner.value = restaurant ? `Re-ordering from ${restaurant.name}` : 'Re-ordering'
     document.getElementById('create-order-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }

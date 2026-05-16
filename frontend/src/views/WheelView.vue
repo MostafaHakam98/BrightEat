@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="max-w-5xl mx-auto px-4 py-8">
     <div class="mb-6">
       <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Restaurant Wheel</h1>
       <p class="mt-2 text-gray-600 dark:text-gray-400">Spin to pick your lunch spot!</p>

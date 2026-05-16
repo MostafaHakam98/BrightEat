@@ -8,10 +8,10 @@
           :key="status"
           @click="filterStatus = status; fetchOrders()"
           :class="[
-            'px-4 py-2 rounded-md',
+            'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
             filterStatus === status
-              ? 'bg-blue-600 dark:bg-blue-500 text-white'
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+              ? 'bg-indigo-600 dark:bg-indigo-500 text-white'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
           ]"
         >
           {{ status || 'All' }}
@@ -27,7 +27,13 @@
       <div
         v-for="order in ordersStore.orders"
         :key="order.id"
-        class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition"
+        :class="[
+          'bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition border-l-4',
+          order.status === 'OPEN' ? 'border-l-green-500' : '',
+          order.status === 'LOCKED' ? 'border-l-amber-500' : '',
+          order.status === 'ORDERED' ? 'border-l-blue-500' : '',
+          order.status === 'CLOSED' ? 'border-l-gray-400' : '',
+        ]"
       >
         <h3 class="text-lg font-semibold mb-2 dark:text-white">{{ order.restaurant_name }}</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">Code: <span class="font-mono">{{ order.code }}</span></p>
@@ -44,17 +50,18 @@
         </p>
 
         <!-- Countdown badge (only for non-closed orders with a cutoff time) -->
-        <p
-          v-if="order.status !== 'CLOSED' && countdown(order.cutoff_time)"
-          class="text-sm font-medium mb-1"
-          :class="{
-            'text-gray-500 dark:text-gray-400': countdown(order.cutoff_time).urgency === 'normal',
-            'text-amber-600 dark:text-amber-400': countdown(order.cutoff_time).urgency === 'warning',
-            'text-red-600 dark:text-red-400 animate-pulse': countdown(order.cutoff_time).urgency === 'urgent',
-            'text-gray-400 dark:text-gray-500 line-through': countdown(order.cutoff_time).urgency === 'passed',
-          }"
-        >
-          ⏱ {{ countdown(order.cutoff_time).text }}
+        <p v-if="order.status !== 'CLOSED' && countdown(order.cutoff_time)" class="mb-1">
+          <span
+            class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+            :class="{
+              'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': countdown(order.cutoff_time).urgency === 'normal',
+              'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300': countdown(order.cutoff_time).urgency === 'warning',
+              'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 animate-pulse': countdown(order.cutoff_time).urgency === 'urgent',
+              'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 line-through': countdown(order.cutoff_time).urgency === 'passed',
+            }"
+          >
+            ⏱ {{ countdown(order.cutoff_time).text }}
+          </span>
         </p>
 
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">Total: {{ order.total_cost.toFixed(2) }} EGP</p>
@@ -65,7 +72,7 @@
         <div class="flex flex-col gap-2 mt-3">
           <router-link
             :to="`/orders/${order.code}`"
-            class="block w-full text-center bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600"
+            class="block w-full text-center bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium transition-colors"
           >
             View Details
           </router-link>
@@ -81,7 +88,7 @@
           <button
             v-if="order.status === 'CLOSED'"
             @click="reorder(order)"
-            class="w-full flex items-center justify-center gap-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 text-sm"
+            class="w-full flex items-center justify-center gap-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-xs font-medium transition-colors"
           >
             ↺ Reorder
           </button>
