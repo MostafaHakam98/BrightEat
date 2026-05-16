@@ -7,6 +7,7 @@ from django.db.models import Q, Sum, Count
 from django.utils import timezone
 from django.db import transaction, IntegrityError
 from decimal import Decimal
+from datetime import timedelta
 from .models import (
     User, Restaurant, Menu, MenuItem, CollectionOrder, 
     OrderItem, Payment, AuditLog, FeePreset, Recommendation
@@ -936,7 +937,140 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
             'total_pending': float(total_pending),
             'total_owed_to_user': float(total_owed_to_user),
         })
-    
+
+    @action(detail=False, methods=['get'])
+    def report(self, request):
+        """Dynamic report: period=daily|weekly|monthly|all_time"""
+        period = request.query_params.get('period', 'monthly')
+        user_id = request.query_params.get('user_id', request.user.id)
+
+        if request.user.role not in ['manager', 'admin'] and str(request.user.id) != str(user_id):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        now = timezone.now()
+
+        if period == 'daily':
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            period_label = now.strftime('%A, %b %d %Y')
+        elif period == 'weekly':
+            start_date = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            period_label = f"Week of {start_date.strftime('%b %d, %Y')}"
+        elif period == 'monthly':
+            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            period_label = now.strftime('%B %Y')
+        elif period == 'all_time':
+            start_date = None
+            period_label = 'All Time'
+        else:
+            return Response(
+                {'error': 'Invalid period. Use daily, weekly, monthly, or all_time'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Build reusable date filters
+        order_date_q = {'order__created_at__gte': start_date} if start_date else {}
+        direct_date_q = {'created_at__gte': start_date} if start_date else {}
+
+        # Total spend (payments where user is payer)
+        total_spend = Payment.objects.filter(user=user, **order_date_q).aggregate(
+            total=Sum('amount')
+        )['total'] or 0
+
+        # Times as collector
+        collector_count = CollectionOrder.objects.filter(collector=user, **direct_date_q).count()
+
+        # Unpaid incidents
+        unpaid_count = Payment.objects.filter(
+            user=user, is_paid=False,
+            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
+            **order_date_q
+        ).count()
+
+        # Orders collected
+        orders_collected = CollectionOrder.objects.filter(collector=user, **direct_date_q)
+        total_collected = Payment.objects.filter(
+            order__in=orders_collected
+        ).exclude(user=user).aggregate(total=Sum('amount'))['total'] or 0
+
+        # Orders participated in
+        orders_participated = CollectionOrder.objects.filter(
+            items__user=user, **direct_date_q
+        ).distinct()
+        total_orders_participated = orders_participated.count()
+
+        # Average order value
+        avg_order_value = 0
+        if total_orders_participated > 0:
+            total_order_values = sum(o.get_total_cost() for o in orders_participated)
+            avg_order_value = total_order_values / total_orders_participated
+
+        # Fees paid = total spend minus item costs
+        total_item_costs = sum(
+            item.total_price
+            for order in orders_participated
+            for item in order.items.filter(user=user)
+        )
+        total_fees_only = float(total_spend) - total_item_costs
+
+        # Payment completion rate
+        total_payments = Payment.objects.filter(
+            user=user,
+            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
+            **order_date_q
+        ).count()
+        paid_payments = Payment.objects.filter(
+            user=user, is_paid=True,
+            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
+            **order_date_q
+        ).count()
+        payment_completion_rate = (paid_payments / total_payments * 100) if total_payments > 0 else 100
+
+        # Most ordered restaurant
+        restaurant_counts = CollectionOrder.objects.filter(
+            items__user=user, **direct_date_q
+        ).values('restaurant__name').annotate(
+            order_count=Count('id', distinct=True)
+        ).order_by('-order_count')
+        most_ordered_restaurant = restaurant_counts[0]['restaurant__name'] if restaurant_counts else None
+        most_ordered_restaurant_count = restaurant_counts[0]['order_count'] if restaurant_counts else 0
+
+        # Total pending (owed by user)
+        total_pending = Payment.objects.filter(
+            user=user, is_paid=False,
+            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
+            **order_date_q
+        ).aggregate(total=Sum('amount'))['total'] or 0
+
+        # Total owed to user (as collector, others unpaid)
+        total_owed_to_user = Payment.objects.filter(
+            order__collector=user, is_paid=False,
+            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
+            **order_date_q
+        ).exclude(user=user).aggregate(total=Sum('amount'))['total'] or 0
+
+        return Response({
+            'user': UserSerializer(user).data,
+            'period': period,
+            'period_label': period_label,
+            'total_spend': float(total_spend),
+            'collector_count': collector_count,
+            'unpaid_count': unpaid_count,
+            'total_collected': float(total_collected),
+            'total_orders_participated': total_orders_participated,
+            'avg_order_value': float(avg_order_value),
+            'total_fees_paid': float(total_fees_only),
+            'payment_completion_rate': float(payment_completion_rate),
+            'most_ordered_restaurant': most_ordered_restaurant,
+            'most_ordered_restaurant_count': most_ordered_restaurant_count,
+            'total_pending': float(total_pending),
+            'total_owed_to_user': float(total_owed_to_user),
+        })
+
     def _calculate_payments(self, order):
         """Calculate payments based on fee split rule"""
         total_items = order.get_total_items_cost()

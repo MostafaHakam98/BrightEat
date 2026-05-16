@@ -279,8 +279,19 @@ export const useOrdersStore = defineStore('orders', () => {
 
   async function getMonthlyReport(userId) {
     try {
-      const response = await api.get('/orders/monthly_report/', { 
-        params: { user_id: userId } 
+      const response = await api.get('/orders/monthly_report/', {
+        params: { user_id: userId }
+      })
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  async function getReport(userId, period = 'monthly') {
+    try {
+      const response = await api.get('/orders/report/', {
+        params: { user_id: userId, period }
       })
       return { success: true, data: response.data }
     } catch (error) {
@@ -337,6 +348,7 @@ export const useOrdersStore = defineStore('orders', () => {
     updateMenuItemPrice,
     fetchFeePresets,
     getMonthlyReport,
+    getReport,
   }
 })
 
