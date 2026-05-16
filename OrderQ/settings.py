@@ -147,6 +147,15 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Custom User Model
 AUTH_USER_MODEL = 'orders.User'
 
+# Authentication backends — local first, Hive as fallback
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'orders.backends.HiveAuthBackend',
+]
+
+# Hive (BSACAIPortal) internal API base URL
+HIVE_API_URL = os.environ.get('HIVE_API_URL', 'http://orchestrator-backend:8000')
+
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
