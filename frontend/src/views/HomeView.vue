@@ -199,7 +199,12 @@ import { useRouter, useRoute } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
 import { useAuthStore } from '../stores/auth'
 import { formatCountdown, useTick } from '../composables/useCountdown'
+import { useToast } from '../composables/useToast'
+import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
+
+const toast = useToast()
+const { confirm: $confirm } = useConfirm()
 
 const router = useRouter()
 const route = useRoute()
@@ -250,16 +255,15 @@ async function fetchPendingPayments() {
 }
 
 async function markAsPaid(paymentId, orderId) {
-  if (!confirm('Mark this payment as paid?')) return
-  
+  if (!(await $confirm('Mark this payment as paid?', 'Confirm Payment'))) return
+
   markingPaid.value = paymentId
   try {
     await api.post(`/payments/${paymentId}/mark_paid/`)
-    // Remove from pending payments
     pendingPayments.value = pendingPayments.value.filter(p => p.payment_id !== paymentId)
-    alert('Payment marked as paid!')
+    toast.success('Payment marked as paid!')
   } catch (error) {
-    alert('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
   } finally {
     markingPaid.value = null
   }
@@ -339,13 +343,12 @@ onMounted(async () => {
 
 async function createOrder() {
   if (!newOrder.value.restaurant) {
-    alert('Please select a restaurant')
+    toast.warning('Please select a restaurant')
     return
   }
-  
-  // Require menu if menus are available
+
   if (availableMenus.value.length > 0 && !newOrder.value.menu) {
-    alert('Please select a menu for this restaurant')
+    toast.warning('Please select a menu for this restaurant')
     return
   }
   
@@ -373,7 +376,7 @@ async function createOrder() {
     newOrder.value = { restaurant: '', menu: null, cutoff_time: '', is_private: false }
     availableMenus.value = []
   } else {
-    alert('Failed to create order: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to create order: ' + (result.error?.detail || JSON.stringify(result.error)))
   }
   loading.value = false
 }
@@ -385,7 +388,7 @@ async function joinOrder() {
   if (result.success) {
     router.push(`/orders/${joinCode.value.toUpperCase()}`)
   } else {
-    alert('Order not found')
+    toast.error('Order not found')
   }
   loading.value = false
 }

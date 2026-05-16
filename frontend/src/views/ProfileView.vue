@@ -169,6 +169,9 @@ import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
 import api from '../api'
+import { useToast } from '../composables/useToast'
+
+const toast = useToast()
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -239,10 +242,10 @@ async function saveProfile() {
     authStore.user = response.data
     profile.value.instapay_qr_code_url = response.data.instapay_qr_code_url
     
-    alert('Profile updated successfully!')
+    toast.success('Profile updated successfully!')
     router.push('/')
   } catch (error) {
-    alert('Failed to update profile: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
+    toast.error('Failed to update profile: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
   } finally {
     saving.value = false
   }
@@ -275,7 +278,7 @@ async function handleChangePassword() {
   )
   
   if (result.success) {
-    alert('Password changed successfully!')
+    toast.success('Password changed successfully!')
     cancelChangePassword()
   } else {
     passwordError.value = result.error?.detail || result.error?.old_password?.[0] || result.error?.new_password?.[0] || 'Failed to change password'

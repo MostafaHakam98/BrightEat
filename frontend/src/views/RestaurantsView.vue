@@ -174,8 +174,12 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useOrdersStore } from '../stores/orders'
+import { useToast } from '../composables/useToast'
+import { useConfirm } from '../composables/useConfirm'
 
 const ordersStore = useOrdersStore()
+const toast = useToast()
+const { confirm: $confirm } = useConfirm()
 const loading = ref(false)
 const showCreateModal = ref(false)
 const showTalabatModal = ref(false)
@@ -244,9 +248,9 @@ async function saveTalabatRestaurant() {
   if (result.success) {
     closeTalabatModal()
     if (result.data.warning) {
-      alert('Restaurant added but menu sync had issues: ' + result.data.warning)
+      toast.warning('Restaurant added but menu sync had issues: ' + result.data.warning)
     } else {
-      alert(result.data.message || 'Restaurant added successfully!')
+      toast.success(result.data.message || 'Restaurant added successfully!')
     }
   } else {
     talabatError.value = result.error?.error || result.error?.detail || 'Failed to add restaurant from Talabat'
@@ -260,9 +264,9 @@ async function syncMenu(restaurantId) {
   const result = await ordersStore.syncRestaurantMenu(restaurantId)
   
   if (result.success) {
-    alert(`Menu synced successfully! ${result.data.items_count || 0} items found.`)
+    toast.success(`Menu synced successfully! ${result.data.items_count || 0} items found.`)
   } else {
-    alert('Failed to sync menu: ' + (result.error?.error || result.error?.detail || 'Unknown error'))
+    toast.error('Failed to sync menu: ' + (result.error?.error || result.error?.detail || 'Unknown error'))
   }
   
   syncingMenu.value = null
@@ -276,14 +280,14 @@ async function saveRestaurant() {
     if (result.success) {
       closeModal()
     } else {
-      alert('Failed to update restaurant: ' + (result.error?.detail || JSON.stringify(result.error)))
+      toast.error('Failed to update restaurant: ' + (result.error?.detail || JSON.stringify(result.error)))
     }
   } else {
     const result = await ordersStore.createRestaurant(newRestaurant.value)
     if (result.success) {
       closeModal()
     } else {
-      alert('Failed to create restaurant: ' + (result.error?.detail || JSON.stringify(result.error)))
+      toast.error('Failed to create restaurant: ' + (result.error?.detail || JSON.stringify(result.error)))
     }
   }
   
@@ -291,13 +295,11 @@ async function saveRestaurant() {
 }
 
 async function deleteRestaurant(restaurantId) {
-  if (!confirm('Are you sure you want to delete this restaurant? This will also delete all associated menus and menu items. This action cannot be undone.')) {
-    return
-  }
-  
+  if (!(await $confirm('Are you sure you want to delete this restaurant? This will also delete all associated menus and menu items. This action cannot be undone.', 'Delete Restaurant'))) return
+
   const result = await ordersStore.deleteRestaurant(restaurantId)
   if (!result.success) {
-    alert('Failed to delete restaurant: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to delete restaurant: ' + (result.error?.detail || JSON.stringify(result.error)))
   }
 }
 </script>

@@ -834,8 +834,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
 import { useAuthStore } from '../stores/auth'
 import { useWebSocketStore } from '../stores/websocket'
+import { useToast } from '../composables/useToast'
+import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
 import QRCode from 'qrcode'
+
+const toast = useToast()
+const { confirm: $confirm } = useConfirm()
 
 const route = useRoute()
 const router = useRouter()
@@ -1157,7 +1162,7 @@ function copyCollectorInstapayLink() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (order?.collector_instapay_link) {
     navigator.clipboard.writeText(order.collector_instapay_link)
-    alert('Instapay link copied to clipboard!')
+    toast.success('Instapay link copied to clipboard!')
   }
 }
 
@@ -1196,24 +1201,24 @@ onUnmounted(() => {
 
 async function addMenuItem() {
   if (!selectedMenuItem.value || !itemQuantity.value) {
-    alert('Please select an item and quantity')
+    toast.warning('Please select an item and quantity')
     return
   }
-  
+
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('This order is locked and cannot be modified')
+    toast.warning('This order is locked and cannot be modified')
     return
   }
 
   // Check if user is trying to assign to someone else but doesn't have permission
   if (selectedItemUser.value && order.collector !== authStore.user?.id && !authStore.isManager) {
-    alert('Only collectors and managers can assign items to other users')
+    toast.warning('Only collectors and managers can assign items to other users')
     return
   }
 
@@ -1250,7 +1255,7 @@ async function addMenuItem() {
       generateInstapayQR()
     } else {
       const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
-      alert('Failed to add item: ' + errorMsg)
+      toast.error('Failed to add item: ' + errorMsg)
     }
   } finally {
     loading.value = wasLoading
@@ -1259,24 +1264,24 @@ async function addMenuItem() {
 
 async function addCustomItem() {
   if (!customItemName.value || !customItemPrice.value) {
-    alert('Please enter item name and price')
+    toast.warning('Please enter item name and price')
     return
   }
-  
+
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('This order is locked and cannot be modified')
+    toast.warning('This order is locked and cannot be modified')
     return
   }
 
   // Check if user is trying to assign to someone else but doesn't have permission
   if (selectedItemUser.value && order.collector !== authStore.user?.id && !authStore.isManager) {
-    alert('Only collectors and managers can assign items to other users')
+    toast.warning('Only collectors and managers can assign items to other users')
     return
   }
 
@@ -1332,7 +1337,7 @@ async function addCustomItem() {
       }
     } else {
       const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
-      alert('Failed to add custom item: ' + errorMsg)
+      toast.error('Failed to add custom item: ' + errorMsg)
     }
   } finally {
     loading.value = wasLoading
@@ -1373,10 +1378,10 @@ async function handleAddToMenu() {
       await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
       await nextTick()
       generateInstapayQR()
-      alert('Item added to menu successfully!')
+      toast.success('Item added to menu successfully!')
     } else {
       const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
-      alert('Failed to add item to menu: ' + errorMsg)
+      toast.error('Failed to add item to menu: ' + errorMsg)
     }
   } finally {
     loading.value = wasLoading
@@ -1396,10 +1401,10 @@ async function handleUpdatePrice() {
       await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
       await nextTick()
       generateInstapayQR()
-      alert('Menu item price updated successfully!')
+      toast.success('Menu item price updated successfully!')
     } else {
       const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
-      alert('Failed to update price: ' + errorMsg)
+      toast.error('Failed to update price: ' + errorMsg)
     }
   } finally {
     loading.value = wasLoading
@@ -1424,25 +1429,22 @@ function dismissUpdatePricePrompt() {
 async function removeItem(itemId) {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('This order is locked and cannot be modified')
+    toast.warning('This order is locked and cannot be modified')
     return
   }
-  
-  if (!confirm('Remove this item?')) return
-  
+
+  if (!(await $confirm('Remove this item?'))) return
+
   loading.value = true
   const result = await ordersStore.removeOrderItem(itemId)
-  
-  if (result.success) {
-    // Don't manually refetch - WebSocket will broadcast the update automatically
-    // await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-  } else {
-    alert('Failed to remove item')
+
+  if (!result.success) {
+    toast.error('Failed to remove item')
   }
   loading.value = false
 }
@@ -1450,22 +1452,22 @@ async function removeItem(itemId) {
 async function updateFees() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('Fees can only be updated when order is open')
+    toast.warning('Fees can only be updated when order is open')
     return
   }
-  
+
   loading.value = true
   try {
     await api.patch(`/orders/${order.id}/`, fees.value)
     saveFeePreset(order.restaurant, fees.value)
-    alert('Fees updated successfully')
+    toast.success('Fees updated successfully')
   } catch (error) {
-    alert('Failed to update fees: ' + (error.response?.data?.detail || error.message))
+    toast.error('Failed to update fees: ' + (error.response?.data?.detail || error.message))
   }
   loading.value = false
 }
@@ -1473,19 +1475,19 @@ async function updateFees() {
 async function lockOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  if (!confirm('Lock this order? Users won\'t be able to add or remove items.')) return
-  
+
+  if (!(await $confirm("Lock this order? Users won't be able to add or remove items.", 'Lock Order'))) return
+
   loading.value = true
   const result = await ordersStore.lockOrder(order.id)
   if (result.success) {
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Order locked successfully')
+    toast.success('Order locked successfully')
   } else {
-    alert('Failed to lock order: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to lock order: ' + (result.error?.detail || JSON.stringify(result.error)))
   }
   loading.value = false
 }
@@ -1493,19 +1495,19 @@ async function lockOrder() {
 async function markOrdered() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  if (!confirm('Mark this order as ordered with the restaurant?')) return
-  
+
+  if (!(await $confirm('Mark this order as ordered with the restaurant?', 'Mark as Ordered'))) return
+
   loading.value = true
   const result = await ordersStore.markOrdered(order.id)
   if (result.success) {
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Order marked as ordered')
+    toast.success('Order marked as ordered')
   } else {
-    alert('Failed to mark as ordered: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to mark as ordered: ' + (result.error?.detail || JSON.stringify(result.error)))
   }
   loading.value = false
 }
@@ -1513,19 +1515,19 @@ async function markOrdered() {
 async function closeOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  if (!confirm('Close this order? This action cannot be undone.')) return
-  
+
+  if (!(await $confirm('Close this order? This action cannot be undone.', 'Close Order'))) return
+
   loading.value = true
   const result = await ordersStore.closeOrder(order.id)
   if (result.success) {
     launchConfetti()
     setTimeout(() => router.push('/orders'), 2800)
   } else {
-    alert('Failed to close order: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to close order: ' + (result.error?.detail || JSON.stringify(result.error)))
     loading.value = false
   }
 }
@@ -1533,19 +1535,19 @@ async function closeOrder() {
 async function unlockOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
 
-  if (!confirm('Unlock this order? Users will be able to add or remove items again. Payments will be cleared and recalculated on next lock.')) return
+  if (!(await $confirm('Unlock this order? Users will be able to add or remove items again. Payments will be cleared and recalculated on next lock.', 'Unlock Order'))) return
 
   loading.value = true
   const result = await ordersStore.unlockOrder(order.id)
   if (result.success) {
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Order unlocked successfully')
+    toast.success('Order unlocked successfully')
   } else {
-    alert('Failed to unlock order: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to unlock order: ' + (result.error?.detail || JSON.stringify(result.error)))
   }
   loading.value = false
 }
@@ -1553,26 +1555,25 @@ async function unlockOrder() {
 async function deleteOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  // Managers can delete any order, collectors can only delete OPEN orders
+
   if (order.status !== 'OPEN' && !authStore.isManager) {
-    alert('Can only delete open orders')
+    toast.warning('Can only delete open orders')
     return
   }
-  
+
   const statusText = order.status !== 'OPEN' ? ` (Status: ${order.status})` : ''
-  if (!confirm(`Are you sure you want to delete this order${statusText}? This action cannot be undone.`)) return
-  
+  if (!(await $confirm(`Are you sure you want to delete this order${statusText}? This action cannot be undone.`, 'Delete Order'))) return
+
   loading.value = true
   const result = await ordersStore.deleteOrder(order.id)
   if (result.success) {
-    alert('Order deleted successfully')
+    toast.success('Order deleted successfully')
     router.replace('/orders')
   } else {
-    alert('Failed to delete order: ' + (result.error?.error || result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to delete order: ' + (result.error?.error || result.error?.detail || JSON.stringify(result.error)))
     loading.value = false
   }
 }
@@ -1580,14 +1581,13 @@ async function deleteOrder() {
 async function copyShareMessage() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order || !order.share_message) {
-    alert('Share message not available')
+    toast.warning('Share message not available')
     return
   }
   try {
     await navigator.clipboard.writeText(order.share_message)
-    alert('Share message copied to clipboard!')
+    toast.success('Share message copied to clipboard!')
   } catch (error) {
-    // Fallback for older browsers
     const textArea = document.createElement('textarea')
     textArea.value = order.share_message
     textArea.style.position = 'fixed'
@@ -1596,24 +1596,24 @@ async function copyShareMessage() {
     textArea.select()
     try {
       document.execCommand('copy')
-      alert('Share message copied to clipboard!')
+      toast.success('Share message copied to clipboard!')
     } catch (err) {
-      alert('Failed to copy message. Please select and copy manually.')
+      toast.error('Failed to copy message. Please select and copy manually.')
     }
     document.body.removeChild(textArea)
   }
 }
 
 async function markPaymentPaid(paymentId) {
-  if (!confirm('Mark this payment as paid?')) return
-  
+  if (!(await $confirm('Mark this payment as paid?', 'Confirm Payment'))) return
+
   loading.value = true
   try {
-    const response = await api.post(`/payments/${paymentId}/mark_paid/`)
+    await api.post(`/payments/${paymentId}/mark_paid/`)
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Payment marked as paid!')
+    toast.success('Payment marked as paid!')
   } catch (error) {
-    alert('Failed to mark payment as paid')
+    toast.error('Failed to mark payment as paid')
   }
   loading.value = false
 }
@@ -1660,69 +1660,64 @@ function deselectAllUsers() {
 async function updateAssignedUsers() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('Can only update assigned users for open orders')
+    toast.warning('Can only update assigned users for open orders')
     return
   }
-  
+
   if (selectedUsers.value.length === 0) {
-    alert('Please select at least one user')
+    toast.warning('Please select at least one user')
     return
   }
-  
-  // Validate: if items or cost is provided, both must be provided
+
   if ((assignmentItems.value && !assignmentTotalCost.value) || (assignmentTotalCost.value && !assignmentItems.value)) {
-    alert('Please provide both number of items and total cost, or leave both empty')
+    toast.warning('Please provide both number of items and total cost, or leave both empty')
     return
   }
-  
+
   loading.value = true
   try {
-    const updateData = {
-      assigned_users: selectedUsers.value
-    }
-    
-    // If items and total cost are provided, include them for backend to create items
+    const updateData = { assigned_users: selectedUsers.value }
+
     if (assignmentItems.value && assignmentTotalCost.value) {
       updateData.assignment_items = assignmentItems.value
       updateData.assignment_total_cost = assignmentTotalCost.value
     }
-    
+
     await api.patch(`/orders/${order.id}/`, updateData)
-    
-    // Reset assignment fields before reloading
+
     const hadItems = assignmentItems.value && assignmentTotalCost.value
     assignmentItems.value = null
     assignmentTotalCost.value = null
-    
+
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    
-    alert('Assigned users updated successfully' + (hadItems ? '. Items have been created and split evenly.' : ''))
+
+    toast.success('Assigned users updated successfully' + (hadItems ? '. Items split evenly.' : ''))
     showAssignUsers.value = false
   } catch (error) {
-    alert('Failed to update assigned users: ' + (error.response?.data?.error || error.response?.data?.detail || error.message))
+    toast.error('Failed to update assigned users: ' + (error.response?.data?.error || error.response?.data?.detail || error.message))
   }
   loading.value = false
 }
 
 async function transferCollector() {
   if (!transferCollectorId.value) {
-    alert('Please select a new collector')
+    toast.warning('Please select a new collector')
     return
   }
-  
+
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  if (!confirm(`Transfer collector role to the selected participant?`)) return
-  
+
+  if (!(await $confirm('Transfer collector role to the selected participant?', 'Transfer Collector'))) return
+
   loading.value = true
   try {
     await api.post(`/orders/${order.id}/transfer_collector/`, {
@@ -1730,9 +1725,9 @@ async function transferCollector() {
     })
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
     transferCollectorId.value = ''
-    alert('Collector role transferred successfully')
+    toast.success('Collector role transferred successfully')
   } catch (error) {
-    alert('Failed to transfer collector: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to transfer collector: ' + (error.response?.data?.error || error.message))
   }
   loading.value = false
 }
@@ -1740,34 +1735,34 @@ async function transferCollector() {
 function openInstapay() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.instapay_link) {
     window.open(order.instapay_link, '_blank')
   } else {
-    alert('Instapay link not set by collector')
+    toast.warning('Instapay link not set by collector')
   }
 }
 
 function copyInstapayLink() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.instapay_link) {
     navigator.clipboard.writeText(order.instapay_link)
-    alert('Instapay link copied to clipboard!')
+    toast.success('Instapay link copied to clipboard!')
   }
 }
 
 async function copyReceipt() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
   
@@ -1789,9 +1784,8 @@ ${order.instapay_link ? `Pay via Instapay: ${order.instapay_link}` : ''}`
   
   try {
     await navigator.clipboard.writeText(receipt)
-    alert('Receipt copied to clipboard! Share it in the group.')
+    toast.success('Receipt copied! Share it in the group.')
   } catch (error) {
-    // Fallback for older browsers
     const textArea = document.createElement('textarea')
     textArea.value = receipt
     textArea.style.position = 'fixed'
@@ -1800,9 +1794,9 @@ ${order.instapay_link ? `Pay via Instapay: ${order.instapay_link}` : ''}`
     textArea.select()
     try {
       document.execCommand('copy')
-      alert('Receipt copied to clipboard! Share it in the group.')
+      toast.success('Receipt copied! Share it in the group.')
     } catch (err) {
-      alert('Failed to copy receipt. Please select and copy manually.')
+      toast.error('Failed to copy receipt. Please select and copy manually.')
     }
     document.body.removeChild(textArea)
   }

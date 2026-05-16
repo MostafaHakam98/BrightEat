@@ -103,7 +103,12 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
 import { formatCountdown, useTick } from '../composables/useCountdown'
+import { useToast } from '../composables/useToast'
+import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
+
+const toast = useToast()
+const { confirm: $confirm } = useConfirm()
 
 const router = useRouter()
 const ordersStore = useOrdersStore()
@@ -146,15 +151,15 @@ async function fetchPendingPayments() {
 }
 
 async function markAsPaid(paymentId, orderId) {
-  if (!confirm('Mark this payment as paid?')) return
+  if (!(await $confirm('Mark this payment as paid?', 'Confirm Payment'))) return
 
   markingPaid.value = paymentId
   try {
     await api.post(`/payments/${paymentId}/mark_paid/`)
     pendingPayments.value = pendingPayments.value.filter(p => p.payment_id !== paymentId)
-    alert('Payment marked as paid!')
+    toast.success('Payment marked as paid!')
   } catch (error) {
-    alert('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
   } finally {
     markingPaid.value = null
   }
