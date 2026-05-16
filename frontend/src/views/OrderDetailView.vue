@@ -45,7 +45,17 @@
         <div class="flex justify-between items-start">
           <div>
             <h1 class="text-3xl font-bold text-gray-900 dark:text-white">{{ currentOrder?.restaurant_name || 'Unknown Restaurant' }}</h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-2">Code: <span class="font-mono font-semibold text-blue-600 dark:text-blue-400">{{ currentOrder?.code || 'N/A' }}</span></p>
+            <p class="text-gray-600 dark:text-gray-400 mt-2 flex items-center gap-2">
+              Code:
+              <span class="font-mono font-semibold text-blue-600 dark:text-blue-400">{{ currentOrder?.code || 'N/A' }}</span>
+              <button
+                @click="copyCode"
+                class="text-xs px-1.5 py-0.5 rounded border transition-colors"
+                :class="codeCopied
+                  ? 'border-green-400 text-green-600 dark:text-green-400'
+                  : 'border-gray-300 dark:border-gray-600 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-400'"
+              >{{ codeCopied ? '✓ Copied' : 'Copy' }}</button>
+            </p>
             <p class="text-gray-600 dark:text-gray-400">Collector: <span class="font-semibold">{{ currentOrder?.collector_name || 'N/A' }}</span></p>
             <p v-if="currentOrder?.cutoff_time" class="text-gray-600 dark:text-gray-400">Cutoff: <span class="font-semibold">{{ formatCutoffTime(currentOrder.cutoff_time) }}</span></p>
             <p v-if="currentOrder?.assigned_users_details && currentOrder.assigned_users_details.length > 0" class="text-gray-600 dark:text-gray-400 mt-2">
@@ -95,6 +105,19 @@
                 {{ currentOrder.status === 'CLOSED' ? 'This order is closed.' : '' }}
               </p>
             </div>
+          </div>
+
+          <!-- Who hasn't ordered yet (collector view, locked/ordered) -->
+          <div
+            v-if="usersWithoutItems.length > 0"
+            class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4"
+          >
+            <p class="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">
+              ⚠ {{ usersWithoutItems.length }} participant{{ usersWithoutItems.length > 1 ? 's' : '' }} haven't added items yet
+            </p>
+            <p class="text-xs text-amber-700 dark:text-amber-400">
+              {{ usersWithoutItems.map(u => u.username).join(', ') }}
+            </p>
           </div>
 
           <!-- Add Items Section (only if OPEN) -->
@@ -863,6 +886,26 @@ const currentOrder = computed(() => {
 
 const availableMenuItems = computed(() => {
   return ordersStore.menuItems.filter(item => item.is_available)
+})
+
+// Copy order code chip
+const codeCopied = ref(false)
+function copyCode() {
+  const code = currentOrder.value?.code
+  if (!code) return
+  navigator.clipboard.writeText(code).then(() => {
+    codeCopied.value = true
+    setTimeout(() => { codeCopied.value = false }, 2000)
+  })
+}
+
+// Who hasn't ordered yet — shown to the collector on LOCKED/ORDERED orders
+const usersWithoutItems = computed(() => {
+  const order = currentOrder.value
+  if (!order || !['LOCKED', 'ORDERED'].includes(order.status)) return []
+  if (order.collector !== authStore.user?.id) return []
+  const usersWithItems = new Set((order.items || []).map(i => i.user))
+  return (order.participants || []).filter(p => !usersWithItems.has(p.id))
 })
 
 // Helper function to format prices safely

@@ -44,6 +44,13 @@
                 Feedback
               </router-link>
               <router-link
+                to="/wheel"
+                class="inline-flex items-center px-2 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600"
+                active-class="border-blue-500 dark:border-blue-400 text-gray-900 dark:text-white"
+              >
+                Wheel
+              </router-link>
+              <router-link
                 v-if="authStore.isManager || authStore.isAdmin"
                 to="/restaurants"
                 class="inline-flex items-center px-2 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600"
@@ -107,9 +114,28 @@
 </template>
 
 <script setup>
+import { watch, onMounted } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { useThemeStore } from './stores/theme'
+import api from './api'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
+
+async function refreshTabTitle() {
+  if (!authStore.isAuthenticated) { document.title = 'OrderQ'; return }
+  try {
+    const res = await api.get('/orders/pending_payments/')
+    const count = res.data.length
+    document.title = count > 0 ? `(${count}) OrderQ` : 'OrderQ'
+  } catch {
+    document.title = 'OrderQ'
+  }
+}
+
+onMounted(refreshTabTitle)
+watch(() => authStore.isAuthenticated, (auth) => {
+  if (auth) refreshTabTitle()
+  else document.title = 'OrderQ'
+})
 </script>

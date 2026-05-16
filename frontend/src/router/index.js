@@ -85,6 +85,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/wheel',
+      name: 'Wheel',
+      component: () => import('../views/WheelView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/users',
       name: 'UserManagement',
       component: () => import('../views/UserManagementView.vue'),
