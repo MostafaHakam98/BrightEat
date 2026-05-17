@@ -4,7 +4,8 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     UserViewSet, LoginView, RegisterView, RestaurantViewSet, MenuViewSet,
     MenuItemViewSet, CollectionOrderViewSet, OrderItemViewSet,
-    PaymentViewSet, AuditLogViewSet, FeePresetViewSet, RecommendationViewSet
+    PaymentViewSet, AuditLogViewSet, FeePresetViewSet, RecommendationViewSet,
+    MicrosoftSSOStatusView, MicrosoftLoginView, MicrosoftCallbackView,
 )
 
 router = DefaultRouter()
@@ -24,5 +25,8 @@ urlpatterns = [
     path('auth/register/', RegisterView.as_view(), name='register'),
     path('auth/login/', LoginView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/microsoft/status/', MicrosoftSSOStatusView.as_view(), name='ms-sso-status'),
+    path('auth/microsoft/login/', MicrosoftLoginView.as_view(), name='ms-login'),
+    path('auth/microsoft/callback/', MicrosoftCallbackView.as_view(), name='ms-callback'),
 ]
 

@@ -102,6 +102,21 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['post'], url_path='set_password')
+    def set_password(self, request, pk=None):
+        """Admin-only: set a password for any user without knowing the current one."""
+        if request.user.role != 'admin':
+            return Response({'error': 'Only administrators can set passwords for other users'},
+                            status=status.HTTP_403_FORBIDDEN)
+        new_password = request.data.get('new_password', '')
+        if not new_password or len(new_password) < 8:
+            return Response({'error': 'Password must be at least 8 characters'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        user = self.get_object()
+        user.set_password(new_password)
+        user.save()
+        return Response({'message': f'Password set for {user.username}'})
+
 
 class LoginView(APIView):
     """Custom login view that accepts username or email"""
@@ -1536,9 +1551,118 @@ class RecommendationViewSet(viewsets.ModelViewSet):
     queryset = Recommendation.objects.all()
     serializer_class = RecommendationSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
         return Recommendation.objects.all().select_related('user')
-    
+
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+# ── Microsoft SSO ────────────────────────────────────────────────────────────
+
+def _get_microsoft_settings():
+    from django.conf import settings
+    return {
+        'client_id':     getattr(settings, 'MICROSOFT_CLIENT_ID', ''),
+        'client_secret': getattr(settings, 'MICROSOFT_CLIENT_SECRET', ''),
+        'tenant_id':     getattr(settings, 'MICROSOFT_TENANT_ID', ''),
+        'redirect_uri':  getattr(settings, 'MICROSOFT_REDIRECT_URI', ''),
+        'enabled':       getattr(settings, 'MICROSOFT_SSO_ENABLED', False),
+    }
+
+
+class MicrosoftSSOStatusView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        cfg = _get_microsoft_settings()
+        enabled = cfg['enabled'] and bool(cfg['client_id']) and bool(cfg['client_secret'])
+        return Response({'enabled': enabled})
+
+
+class MicrosoftLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        import uuid
+        import msal
+        cfg = _get_microsoft_settings()
+        if not cfg['enabled'] or not cfg['client_id']:
+            return Response({'error': 'Microsoft SSO is not configured'},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        app = msal.ConfidentialClientApplication(
+            client_id=cfg['client_id'],
+            client_credential=cfg['client_secret'],
+            authority=f"https://login.microsoftonline.com/{cfg['tenant_id']}",
+        )
+        state = str(uuid.uuid4())
+        request.session['ms_state'] = state
+        auth_url = app.get_authorization_request_url(
+            scopes=['User.Read'],
+            state=state,
+            redirect_uri=cfg['redirect_uri'],
+        )
+        from django.http import HttpResponseRedirect
+        return HttpResponseRedirect(auth_url)
+
+
+class MicrosoftCallbackView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        import msal
+        from django.conf import settings as django_settings
+        cfg = _get_microsoft_settings()
+        frontend_url = getattr(django_settings, 'FRONTEND_URL', 'https://localhost')
+
+        error = request.GET.get('error')
+        if error:
+            return _ms_redirect_error(frontend_url, error)
+
+        returned_state = request.GET.get('state', '')
+        expected_state = request.session.pop('ms_state', None)
+        if not expected_state or returned_state != expected_state:
+            return _ms_redirect_error(frontend_url, 'state_mismatch')
+
+        code = request.GET.get('code')
+        if not code:
+            return _ms_redirect_error(frontend_url, 'no_code')
+
+        app = msal.ConfidentialClientApplication(
+            client_id=cfg['client_id'],
+            client_credential=cfg['client_secret'],
+            authority=f"https://login.microsoftonline.com/{cfg['tenant_id']}",
+        )
+        result = app.acquire_token_by_authorization_code(
+            code, scopes=['User.Read'], redirect_uri=cfg['redirect_uri'],
+        )
+        if 'error' in result:
+            return _ms_redirect_error(frontend_url, 'token_error')
+
+        claims = result.get('id_token_claims', {})
+        email = (claims.get('preferred_username') or claims.get('email') or '').lower().strip()
+        if not email:
+            return _ms_redirect_error(frontend_url, 'no_email')
+
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            return _ms_redirect_error(frontend_url, 'user_not_found')
+
+        if not user.is_active:
+            return _ms_redirect_error(frontend_url, 'user_inactive')
+
+        refresh = RefreshToken.for_user(user)
+        from django.http import HttpResponseRedirect
+        return HttpResponseRedirect(
+            f"{frontend_url}/sso-callback"
+            f"?access={refresh.access_token}"
+            f"&refresh={str(refresh)}"
+        )
+
+
+def _ms_redirect_error(frontend_url, error):
+    from django.http import HttpResponseRedirect
+    return HttpResponseRedirect(f"{frontend_url}/login?sso_error={error}")

@@ -96,6 +96,11 @@ const router = createRouter({
       component: () => import('../views/UserManagementView.vue'),
       meta: { requiresAuth: true, requiresAdmin: true },
     },
+    {
+      path: '/sso-callback',
+      name: 'SSOCallback',
+      component: () => import('../views/SSOCallbackView.vue'),
+    },
   ],
 })
 

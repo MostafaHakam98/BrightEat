@@ -84,6 +84,25 @@
       <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
         <div class="mt-3">
           <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Edit User: {{ editingUser.username }}</h3>
+          <!-- Set Password (admin only) -->
+          <div v-if="authStore.isAdmin" class="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-2">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Set Password</p>
+            <input
+              v-model="newPassword"
+              type="password"
+              placeholder="New password (min 8 chars)"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            />
+            <button
+              type="button"
+              :disabled="!newPassword || newPassword.length < 8 || settingPassword"
+              @click="setUserPassword"
+              class="w-full px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-md transition-colors"
+            >
+              {{ settingPassword ? 'Setting…' : 'Set Password' }}
+            </button>
+          </div>
+
           <form @submit.prevent="saveUser" class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email</label>
@@ -179,6 +198,8 @@ const editForm = ref({
 const saving = ref(false)
 const editError = ref('')
 const updatingUsers = ref(new Set())
+const newPassword = ref('')
+const settingPassword = ref(false)
 
 onMounted(async () => {
   await fetchUsers()
@@ -245,6 +266,21 @@ function closeEditModal() {
     role: 'user',
   }
   editError.value = ''
+  newPassword.value = ''
+}
+
+async function setUserPassword() {
+  if (!editingUser.value || !newPassword.value || newPassword.value.length < 8) return
+  settingPassword.value = true
+  try {
+    await api.post(`/users/${editingUser.value.id}/set_password/`, { new_password: newPassword.value })
+    toast.success(`Password set for ${editingUser.value.username}`)
+    newPassword.value = ''
+  } catch (err) {
+    toast.error(err.response?.data?.error || 'Failed to set password')
+  } finally {
+    settingPassword.value = false
+  }
 }
 
 async function saveUser() {

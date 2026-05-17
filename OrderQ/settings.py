@@ -220,6 +220,13 @@ CORS_ALLOW_CREDENTIALS = True
 # Frontend URL for share messages
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://localhost')
 
+# Microsoft SSO
+MICROSOFT_SSO_ENABLED = os.environ.get('MICROSOFT_SSO_ENABLED', 'False') == 'True'
+MICROSOFT_CLIENT_ID = os.environ.get('MICROSOFT_CLIENT_ID', '')
+MICROSOFT_CLIENT_SECRET = os.environ.get('MICROSOFT_CLIENT_SECRET', '')
+MICROSOFT_TENANT_ID = os.environ.get('MICROSOFT_TENANT_ID', '')
+MICROSOFT_REDIRECT_URI = os.environ.get('MICROSOFT_REDIRECT_URI', '')
+
 # Cite API base URL
 CITE_API_BASE_URL = os.environ.get('CITE_API_BASE_URL', '')
 

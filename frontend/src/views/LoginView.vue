@@ -54,6 +54,30 @@
               </button>
             </div>
 
+            <div v-if="ssoEnabled" class="relative">
+              <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-200 dark:border-gray-700"></div></div>
+              <div class="relative flex justify-center text-xs uppercase">
+                <span class="bg-white dark:bg-gray-900 px-2 text-gray-400">or</span>
+              </div>
+            </div>
+
+            <div v-if="ssoEnabled">
+              <button
+                type="button"
+                :disabled="ssoLoading"
+                @click="loginWithHive"
+                class="w-full flex items-center justify-center gap-2 py-2 px-4 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
+              >
+                <svg class="w-4 h-4" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                  <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                  <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                  <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                </svg>
+                {{ ssoLoading ? 'Redirecting…' : 'Login with Hive (Microsoft)' }}
+              </button>
+            </div>
+
             <div class="text-center">
               <p class="text-sm text-gray-600 dark:text-gray-400">
                 Contact your manager to create an account
@@ -67,17 +91,43 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import api from '../api'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
+const ssoEnabled = ref(false)
+const ssoLoading = ref(false)
+
+const SSO_ERROR_MESSAGES = {
+  state_mismatch:  'Security check failed. Please try again.',
+  token_error:     'Could not complete sign-in with Microsoft.',
+  no_email:        'No email was returned by Microsoft.',
+  user_not_found:  'Your Microsoft account is not registered in OrderQ. Contact your administrator.',
+  user_inactive:   'Your account is inactive.',
+  not_configured:  'Microsoft sign-in is not configured on this server.',
+}
+
+onMounted(async () => {
+  const ssoError = route.query.sso_error
+  if (ssoError) {
+    error.value = SSO_ERROR_MESSAGES[ssoError] || `Sign-in error: ${ssoError}`
+  }
+  try {
+    const res = await api.get('/auth/microsoft/status/')
+    ssoEnabled.value = res.data.enabled
+  } catch {
+    ssoEnabled.value = false
+  }
+})
 
 async function handleLogin() {
   loading.value = true
@@ -92,5 +142,10 @@ async function handleLogin() {
   }
 
   loading.value = false
+}
+
+function loginWithHive() {
+  ssoLoading.value = true
+  window.location.href = '/api/auth/microsoft/login/'
 }
 </script>
