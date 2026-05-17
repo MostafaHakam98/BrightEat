@@ -45,6 +45,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
+import os
+
 import requests
 
 
@@ -168,6 +170,37 @@ def parse_url_parts(url: str) -> Dict[str, Optional[str]]:
 
 # ---------- Network + Parsing ----------
 
+def _is_cloudflare_block(status_code: int, headers: dict, html: str) -> bool:
+    """Return True if the response looks like a Cloudflare block/challenge."""
+    if status_code in (403, 503):
+        return True
+    if "cf-mitigated" in headers:
+        return True
+    low = html.lower()
+    return bool(
+        ("cdn-cgi/challenge-platform" in low or "cf-ray" in low)
+        and "__next_data__" not in low
+    )
+
+
+def fetch_via_flaresolverr(url: str, flaresolverr_url: str, timeout_ms: int = 60000) -> str:
+    """Use FlareSolverr to bypass Cloudflare challenges."""
+    payload = {"cmd": "request.get", "url": url, "maxTimeout": timeout_ms}
+    resp = requests.post(
+        f"{flaresolverr_url}/v1",
+        json=payload,
+        timeout=timeout_ms // 1000 + 15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("status") != "ok":
+        raise RuntimeError(f"FlareSolverr error: {data.get('message', 'unknown')}")
+    html = data.get("solution", {}).get("response", "")
+    if not html:
+        raise RuntimeError("FlareSolverr returned empty response")
+    return html
+
+
 def fetch_html_with_retries(
     url: str,
     timeout: int,
@@ -177,8 +210,7 @@ def fetch_html_with_retries(
 ) -> str:
     """
     Fetch HTML with retries and exponential backoff.
-    Saves debug HTML if blocked.
-    Uses session cookies by visiting homepage first to appear more human-like.
+    Falls back to FlareSolverr (FLARESOLVERR_URL env var) on Cloudflare blocks.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -194,61 +226,56 @@ def fetch_html_with_retries(
         "Connection": "keep-alive",
     }
 
+    flaresolverr_url = os.environ.get("FLARESOLVERR_URL", "").strip()
     last_err: Optional[Exception] = None
     sess = requests.Session()
-    
-    # Visit homepage first to get cookies and appear more human-like
-    try:
-        homepage_url = "https://www.talabat.com/"
-        sess.get(homepage_url, headers=headers, timeout=timeout, allow_redirects=True)
-        time.sleep(0.5)  # Small delay to seem more human
-    except Exception:
-        pass  # Continue even if homepage visit fails
 
-    for attempt in range(1, retries + 2):  # retries means extra attempts
+    try:
+        sess.get("https://www.talabat.com/", headers=headers, timeout=timeout, allow_redirects=True)
+        time.sleep(0.5)
+    except Exception:
+        pass
+
+    for attempt in range(1, retries + 2):
         try:
-            # Update referer for subsequent requests
             if attempt > 1:
                 headers["Referer"] = "https://www.talabat.com/"
-            
+
             resp = sess.get(url, headers=headers, timeout=timeout, allow_redirects=True)
-            resp.raise_for_status()
             html = resp.text
 
-            # Check if we got a valid response
+            if _is_cloudflare_block(resp.status_code, dict(resp.headers), html):
+                save_debug_html(html, debug_path)
+                if flaresolverr_url:
+                    print(f"[info] Cloudflare block (HTTP {resp.status_code}), trying FlareSolverr...")
+                    try:
+                        fs_html = fetch_via_flaresolverr(url, flaresolverr_url, timeout_ms=timeout * 1000)
+                        if fs_html and len(fs_html) >= 1000 and "__next_data__" in fs_html.lower():
+                            print("[info] FlareSolverr succeeded.")
+                            return fs_html
+                        raise RuntimeError("FlareSolverr returned a page without __NEXT_DATA__")
+                    except Exception as fs_err:
+                        raise RuntimeError(f"FlareSolverr also failed: {fs_err}") from fs_err
+                raise RuntimeError(
+                    f"Cloudflare block (HTTP {resp.status_code}). "
+                    f"Set FLARESOLVERR_URL env var to bypass. HTML saved to {debug_path}."
+                )
+
+            resp.raise_for_status()
+
             if len(html) < 1000:
                 raise RuntimeError(f"Response too short ({len(html)} bytes), likely an error page")
 
-            blocked_reason = detect_blocked_html(html)
-            if blocked_reason:
-                # Save for inspection
-                save_debug_html(html, debug_path)
-                
-                # Check if it's a Cloudflare challenge
-                if "cloudflare" in html.lower() or "cf-ray" in html.lower() or "challenge" in html.lower():
-                    raise RuntimeError(
-                        f"Cloudflare challenge detected. This usually means Talabat is blocking automated requests. "
-                        f"HTML saved to {debug_path} for inspection. "
-                        f"You may need to use a browser automation tool (like Selenium) or add delays between requests."
-                    )
-                
-                raise RuntimeError(f"{blocked_reason} (Saved: {debug_path})")
-
-            # Verify __NEXT_DATA__ exists
             if "__next_data__" not in html.lower():
                 save_debug_html(html, debug_path)
                 raise RuntimeError(
-                    f"__NEXT_DATA__ not found in HTML. This could mean:\n"
-                    f"1. Talabat is blocking the request (check {debug_path})\n"
-                    f"2. The page structure has changed\n"
-                    f"3. The URL is invalid or the restaurant doesn't exist\n"
-                    f"HTML saved to {debug_path} for inspection."
+                    f"__NEXT_DATA__ not found in HTML. "
+                    f"The page structure may have changed. HTML saved to {debug_path}."
                 )
 
             return html
 
         except RuntimeError:
-            # Re-raise RuntimeErrors (our custom errors)
             raise
         except Exception as e:
             last_err = e
@@ -259,14 +286,11 @@ def fetch_html_with_retries(
             print(f"[warn] Retrying in {sleep_s:.1f}s...")
             time.sleep(sleep_s)
 
-    # Save last error HTML if available
-    if last_err and hasattr(last_err, 'response') and hasattr(last_err.response, 'text'):
+    if last_err and hasattr(last_err, "response") and hasattr(last_err.response, "text"):
         save_debug_html(last_err.response.text, debug_path)
-    
+
     raise RuntimeError(
-        f"Failed to fetch page after {retries+1} attempts. Last error: {last_err}\n"
-        f"If this persists, Talabat may be blocking automated requests. "
-        f"Consider using browser automation (Selenium/Playwright) or adding longer delays."
+        f"Failed to fetch page after {retries+1} attempts. Last error: {last_err}"
     )
 
 
