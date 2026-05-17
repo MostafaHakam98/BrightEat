@@ -105,6 +105,7 @@ const password = ref('')
 const loading = ref(false)
 const error = ref('')
 const ssoEnabled = ref(false)
+const ssoLoginUrl = ref('')
 const ssoLoading = ref(false)
 
 const SSO_ERROR_MESSAGES = {
@@ -124,6 +125,7 @@ onMounted(async () => {
   try {
     const res = await api.get('/auth/microsoft/status/')
     ssoEnabled.value = res.data.enabled
+    ssoLoginUrl.value = res.data.login_url || ''
   } catch {
     ssoEnabled.value = false
   }
@@ -145,7 +147,10 @@ async function handleLogin() {
 }
 
 function loginWithHive() {
+  if (!ssoLoginUrl.value) return
   ssoLoading.value = true
-  window.location.href = '/api/auth/microsoft/login/'
+  // Navigate directly to the external Hive URL — cross-origin navigations
+  // bypass the service worker, avoiding the SW/redirect conflict.
+  window.location.href = ssoLoginUrl.value
 }
 </script>

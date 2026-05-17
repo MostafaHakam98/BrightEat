@@ -1567,8 +1567,10 @@ class MicrosoftSSOStatusView(APIView):
 
     def get(self, request):
         from django.conf import settings as django_settings
-        enabled = bool(getattr(django_settings, 'HIVE_URL', ''))
-        return Response({'enabled': enabled})
+        hive_url = getattr(django_settings, 'HIVE_URL', '').rstrip('/')
+        enabled = bool(hive_url)
+        login_url = f"{hive_url}/api/users/auth/microsoft/login/" if enabled else None
+        return Response({'enabled': enabled, 'login_url': login_url})
 
 
 class MicrosoftLoginView(APIView):
