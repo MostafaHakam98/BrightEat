@@ -1559,110 +1559,63 @@ class RecommendationViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
 
-# ── Microsoft SSO ────────────────────────────────────────────────────────────
-
-def _get_microsoft_settings():
-    from django.conf import settings
-    return {
-        'client_id':     getattr(settings, 'MICROSOFT_CLIENT_ID', ''),
-        'client_secret': getattr(settings, 'MICROSOFT_CLIENT_SECRET', ''),
-        'tenant_id':     getattr(settings, 'MICROSOFT_TENANT_ID', ''),
-        'redirect_uri':  getattr(settings, 'MICROSOFT_REDIRECT_URI', ''),
-        'enabled':       getattr(settings, 'MICROSOFT_SSO_ENABLED', False),
-    }
-
+# ── Hive SSO (proxy through Hive's Microsoft login) ──────────────────────────
 
 class MicrosoftSSOStatusView(APIView):
+    """Return whether Hive SSO is configured (HIVE_URL is set)."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        cfg = _get_microsoft_settings()
-        enabled = cfg['enabled'] and bool(cfg['client_id']) and bool(cfg['client_secret'])
+        from django.conf import settings as django_settings
+        enabled = bool(getattr(django_settings, 'HIVE_URL', ''))
         return Response({'enabled': enabled})
 
 
 class MicrosoftLoginView(APIView):
+    """Redirect the browser to Hive's Microsoft login. Hive's callback will
+    redirect back to OrderQ's frontend (via the Referer header)."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        import uuid
-        import msal
-        cfg = _get_microsoft_settings()
-        if not cfg['enabled'] or not cfg['client_id']:
-            return Response({'error': 'Microsoft SSO is not configured'},
-                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-        app = msal.ConfidentialClientApplication(
-            client_id=cfg['client_id'],
-            client_credential=cfg['client_secret'],
-            authority=f"https://login.microsoftonline.com/{cfg['tenant_id']}",
-        )
-        state = str(uuid.uuid4())
-        request.session['ms_state'] = state
-        auth_url = app.get_authorization_request_url(
-            scopes=['User.Read'],
-            state=state,
-            redirect_uri=cfg['redirect_uri'],
-        )
+        from django.conf import settings as django_settings
         from django.http import HttpResponseRedirect
-        return HttpResponseRedirect(auth_url)
+        hive_url = getattr(django_settings, 'HIVE_URL', '').rstrip('/')
+        if not hive_url:
+            return Response({'error': 'Hive SSO is not configured'},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return HttpResponseRedirect(f"{hive_url}/api/users/auth/microsoft/login/")
 
 
 class MicrosoftCallbackView(APIView):
+    """Unused in the Hive-proxy flow — kept so the URL pattern doesn't 404."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        import msal
         from django.conf import settings as django_settings
-        cfg = _get_microsoft_settings()
+        from django.http import HttpResponseRedirect
         frontend_url = getattr(django_settings, 'FRONTEND_URL', 'https://localhost')
+        return HttpResponseRedirect(f"{frontend_url}/login?sso_error=not_configured")
 
-        error = request.GET.get('error')
-        if error:
-            return _ms_redirect_error(frontend_url, error)
 
-        returned_state = request.GET.get('state', '')
-        expected_state = request.session.pop('ms_state', None)
-        if not expected_state or returned_state != expected_state:
-            return _ms_redirect_error(frontend_url, 'state_mismatch')
+class HiveSSOView(APIView):
+    """Accept the email returned by the browser's credentialed CORS check
+    against Hive's session, then issue an OrderQ JWT."""
+    permission_classes = [permissions.AllowAny]
 
-        code = request.GET.get('code')
-        if not code:
-            return _ms_redirect_error(frontend_url, 'no_code')
-
-        app = msal.ConfidentialClientApplication(
-            client_id=cfg['client_id'],
-            client_credential=cfg['client_secret'],
-            authority=f"https://login.microsoftonline.com/{cfg['tenant_id']}",
-        )
-        result = app.acquire_token_by_authorization_code(
-            code, scopes=['User.Read'], redirect_uri=cfg['redirect_uri'],
-        )
-        if 'error' in result:
-            return _ms_redirect_error(frontend_url, 'token_error')
-
-        claims = result.get('id_token_claims', {})
-        email = (claims.get('preferred_username') or claims.get('email') or '').lower().strip()
+    def post(self, request):
+        email = (request.data.get('email') or '').lower().strip()
         if not email:
-            return _ms_redirect_error(frontend_url, 'no_email')
-
+            return Response({'error': 'email is required'}, status=status.HTTP_400_BAD_REQUEST)
+        # Only accept company email addresses
+        if not email.endswith('@brightskiesinc.com'):
+            return Response({'error': 'Only @brightskiesinc.com accounts are allowed'},
+                            status=status.HTTP_403_FORBIDDEN)
         try:
             user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
-            return _ms_redirect_error(frontend_url, 'user_not_found')
-
+            return Response({'error': 'No OrderQ account found for this email. Contact your administrator.'},
+                            status=status.HTTP_404_NOT_FOUND)
         if not user.is_active:
-            return _ms_redirect_error(frontend_url, 'user_inactive')
-
+            return Response({'error': 'Account is inactive'}, status=status.HTTP_403_FORBIDDEN)
         refresh = RefreshToken.for_user(user)
-        from django.http import HttpResponseRedirect
-        return HttpResponseRedirect(
-            f"{frontend_url}/sso-callback"
-            f"?access={refresh.access_token}"
-            f"&refresh={str(refresh)}"
-        )
-
-
-def _ms_redirect_error(frontend_url, error):
-    from django.http import HttpResponseRedirect
-    return HttpResponseRedirect(f"{frontend_url}/login?sso_error={error}")
+        return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})

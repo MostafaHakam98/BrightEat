@@ -50,11 +50,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - FLARESOLVERR_URL=http://flaresolverr:8191
-      - MICROSOFT_SSO_ENABLED=${MICROSOFT_SSO_ENABLED:-False}
-      - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID:-}
-      - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET:-}
-      - MICROSOFT_TENANT_ID=${MICROSOFT_TENANT_ID:-}
-      - MICROSOFT_REDIRECT_URI=${MICROSOFT_REDIRECT_URI:-}
+      - HIVE_URL=https://acai.brightskiesinc.com
     networks:
       - default
       - hive-network
