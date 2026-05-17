@@ -259,6 +259,11 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
 import api from '../api'
+import { useToast } from '../composables/useToast'
+import { useConfirm } from '../composables/useConfirm'
+
+const toast = useToast()
+const { confirm: $confirm } = useConfirm()
 
 const route = useRoute()
 const router = useRouter()
@@ -364,16 +369,14 @@ async function saveMenu() {
     await loadMenus()
     closeMenuModal()
   } catch (error) {
-    alert('Failed to save menu: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
+    toast.error('Failed to save menu: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
   }
   creatingMenu.value = false
 }
 
 async function deleteMenu(menuId) {
-  if (!confirm('Are you sure you want to delete this menu? This will also delete all menu items. This action cannot be undone.')) {
-    return
-  }
-  
+  if (!(await $confirm('Are you sure you want to delete this menu? This will also delete all menu items. This action cannot be undone.', 'Delete Menu'))) return
+
   try {
     await api.delete(`/menus/${menuId}/`)
     await loadMenus()
@@ -382,7 +385,7 @@ async function deleteMenu(menuId) {
       menuItems.value = []
     }
   } catch (error) {
-    alert('Failed to delete menu: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
+    toast.error('Failed to delete menu: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
   }
 }
 
@@ -402,7 +405,7 @@ async function saveItem() {
     await selectMenu(selectedMenu.value)
     closeItemModal()
   } catch (error) {
-    alert('Failed to save item: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
+    toast.error('Failed to save item: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
   }
   savingItem.value = false
 }
@@ -418,13 +421,13 @@ function editItem(item) {
 }
 
 async function deleteItem(itemId) {
-  if (!confirm('Are you sure you want to delete this item?')) return
-  
+  if (!(await $confirm('Are you sure you want to delete this item?', 'Delete Item'))) return
+
   try {
     await api.delete(`/menu-items/${itemId}/`)
     await selectMenu(selectedMenu.value)
   } catch (error) {
-    alert('Failed to delete item')
+    toast.error('Failed to delete item')
   }
 }
 

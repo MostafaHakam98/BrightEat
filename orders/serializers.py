@@ -76,21 +76,22 @@ class LoginSerializer(serializers.Serializer):
         
         if not username and not email:
             raise serializers.ValidationError("Either username or email must be provided")
-        
+
         if username and email:
             raise serializers.ValidationError("Provide either username or email, not both")
-        
-        # Try to find user by username or email
-        try:
-            if username:
-                user = User.objects.get(username=username)
-            else:
-                user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError("Invalid credentials")
-        
-        # Authenticate with the found username
-        user = authenticate(username=user.username, password=password)
+
+        # Resolve local username if the user already exists; otherwise pass
+        # the raw value so that HiveAuthBackend can attempt a remote lookup.
+        login_as = username
+        if email:
+            try:
+                local = User.objects.get(email=email)
+                login_as = local.username
+            except User.DoesNotExist:
+                login_as = email  # Hive accepts email in the username field
+
+        # authenticate() tries ModelBackend first, then HiveAuthBackend
+        user = authenticate(username=login_as, password=password)
         if not user:
             raise serializers.ValidationError("Invalid credentials")
         

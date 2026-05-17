@@ -98,6 +98,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../api'
+import { useToast } from '../composables/useToast'
+
+const toast = useToast()
 
 const loading = ref(true)
 const submitting = ref(false)
@@ -127,7 +130,7 @@ async function fetchRecommendations() {
     recommendations.value = response.data.results || response.data
   } catch (error) {
     console.error('Failed to fetch recommendations:', error)
-    alert('Failed to load recommendations: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to load recommendations: ' + (error.response?.data?.error || error.message))
   } finally {
     loading.value = false
   }
@@ -135,7 +138,7 @@ async function fetchRecommendations() {
 
 async function addRecommendation() {
   if (!newRecommendation.value.title.trim() || !newRecommendation.value.text.trim()) {
-    alert('Please fill in both title and details')
+    toast.warning('Please fill in both title and details')
     return
   }
   
@@ -148,9 +151,9 @@ async function addRecommendation() {
     })
     newRecommendation.value = { category: 'other', title: '', text: '' }
     await fetchRecommendations()
-    alert('Recommendation submitted successfully! Thank you for your feedback.')
+    toast.success('Recommendation submitted! Thank you for your feedback.')
   } catch (error) {
-    alert('Failed to submit recommendation: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to submit recommendation: ' + (error.response?.data?.error || error.message))
   } finally {
     submitting.value = false
   }

@@ -8,10 +8,10 @@
           :key="status"
           @click="filterStatus = status; fetchOrders()"
           :class="[
-            'px-4 py-2 rounded-md',
+            'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
             filterStatus === status
-              ? 'bg-blue-600 dark:bg-blue-500 text-white'
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+              ? 'bg-indigo-600 dark:bg-indigo-500 text-white'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
           ]"
         >
           {{ status || 'All' }}
@@ -27,12 +27,18 @@
       <div
         v-for="order in ordersStore.orders"
         :key="order.id"
-        class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition"
+        :class="[
+          'bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition border-l-4',
+          order.status === 'OPEN' ? 'border-l-green-500' : '',
+          order.status === 'LOCKED' ? 'border-l-amber-500' : '',
+          order.status === 'ORDERED' ? 'border-l-blue-500' : '',
+          order.status === 'CLOSED' ? 'border-l-gray-400' : '',
+        ]"
       >
         <h3 class="text-lg font-semibold mb-2 dark:text-white">{{ order.restaurant_name }}</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">Code: <span class="font-mono">{{ order.code }}</span></p>
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">Collector: {{ order.collector_name }}</p>
-        <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">Status: 
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">Status:
           <span :class="{
             'text-green-600 dark:text-green-400': order.status === 'OPEN',
             'text-yellow-600 dark:text-yellow-400': order.status === 'LOCKED',
@@ -42,14 +48,31 @@
             {{ order.status }}
           </span>
         </p>
+
+        <!-- Countdown badge (only for non-closed orders with a cutoff time) -->
+        <p v-if="order.status !== 'CLOSED' && countdown(order.cutoff_time)" class="mb-1">
+          <span
+            class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+            :class="{
+              'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': countdown(order.cutoff_time).urgency === 'normal',
+              'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300': countdown(order.cutoff_time).urgency === 'warning',
+              'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 animate-pulse': countdown(order.cutoff_time).urgency === 'urgent',
+              'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 line-through': countdown(order.cutoff_time).urgency === 'passed',
+            }"
+          >
+            ⏱ {{ countdown(order.cutoff_time).text }}
+          </span>
+        </p>
+
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">Total: {{ order.total_cost.toFixed(2) }} EGP</p>
         <p v-if="getPendingPayment(order.id)" class="text-sm font-semibold text-yellow-600 dark:text-yellow-400 mb-2">
           Pending: {{ formatPrice(getPendingPayment(order.id).amount) }} EGP
         </p>
-        <div class="flex flex-col gap-2">
+
+        <div class="flex flex-col gap-2 mt-3">
           <router-link
             :to="`/orders/${order.code}`"
-            class="block w-full text-center bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600"
+            class="block w-full text-center bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium transition-colors"
           >
             View Details
           </router-link>
@@ -61,6 +84,14 @@
           >
             {{ markingPaid === getPendingPayment(order.id).payment_id ? 'Paying...' : 'Pay' }}
           </button>
+          <!-- Reorder button — only on closed orders -->
+          <button
+            v-if="order.status === 'CLOSED'"
+            @click="reorder(order)"
+            class="w-full flex items-center justify-center gap-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-xs font-medium transition-colors"
+          >
+            ↺ Reorder
+          </button>
         </div>
       </div>
     </div>
@@ -69,14 +100,30 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
+import { formatCountdown, useTick } from '../composables/useCountdown'
+import { useToast } from '../composables/useToast'
+import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
 
+const toast = useToast()
+const { confirm: $confirm } = useConfirm()
+
+const router = useRouter()
 const ordersStore = useOrdersStore()
 const filterStatus = ref('')
 const loading = ref(false)
 const pendingPayments = ref([])
 const markingPaid = ref(null)
+
+// Single timer that ticks every 30s — referenced in countdown() to stay reactive
+const tick = useTick()
+
+function countdown(cutoffTime) {
+  void tick.value // reactive dependency
+  return formatCountdown(cutoffTime)
+}
 
 function formatPrice(value) {
   if (value === null || value === undefined) return '0.00'
@@ -86,6 +133,12 @@ function formatPrice(value) {
 
 function getPendingPayment(orderId) {
   return pendingPayments.value.find(p => p.order_id === orderId)
+}
+
+function reorder(order) {
+  const query = { restaurant: order.restaurant }
+  if (order.menu) query.menu = order.menu
+  router.push({ path: '/', query })
 }
 
 async function fetchPendingPayments() {
@@ -98,16 +151,15 @@ async function fetchPendingPayments() {
 }
 
 async function markAsPaid(paymentId, orderId) {
-  if (!confirm('Mark this payment as paid?')) return
-  
+  if (!(await $confirm('Mark this payment as paid?', 'Confirm Payment'))) return
+
   markingPaid.value = paymentId
   try {
     await api.post(`/payments/${paymentId}/mark_paid/`)
-    // Remove from pending payments
     pendingPayments.value = pendingPayments.value.filter(p => p.payment_id !== paymentId)
-    alert('Payment marked as paid!')
+    toast.success('Payment marked as paid!')
   } catch (error) {
-    alert('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
   } finally {
     markingPaid.value = null
   }
@@ -124,4 +176,3 @@ async function fetchOrders() {
   loading.value = false
 }
 </script>
-

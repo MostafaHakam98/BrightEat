@@ -116,6 +116,11 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import api from '../api'
+import { useToast } from '../composables/useToast'
+import { useConfirm } from '../composables/useConfirm'
+
+const toast = useToast()
+const { confirm: $confirm } = useConfirm()
 
 const loading = ref(true)
 const pendingPayments = ref([])
@@ -144,22 +149,22 @@ async function fetchPendingPayments() {
     paymentsOwedToMe.value = response2.data
   } catch (error) {
     console.error('Failed to fetch pending payments:', error)
-    alert('Failed to load pending payments: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to load pending payments: ' + (error.response?.data?.error || error.message))
   } finally {
     loading.value = false
   }
 }
 
 async function markAsPaid(paymentId) {
-  if (!confirm('Mark this payment as paid?')) return
-  
+  if (!(await $confirm('Mark this payment as paid?', 'Confirm Payment'))) return
+
   markingPaid.value = paymentId
   try {
     await api.post(`/payments/${paymentId}/mark_paid/`)
     await fetchPendingPayments()
-    alert('Payment marked as paid!')
+    toast.success('Payment marked as paid!')
   } catch (error) {
-    alert('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
   } finally {
     markingPaid.value = null
   }

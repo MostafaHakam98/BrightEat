@@ -159,7 +159,9 @@ import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useOrdersStore } from '../stores/orders'
 import api from '../api'
+import { useToast } from '../composables/useToast'
 
+const toast = useToast()
 const authStore = useAuthStore()
 const ordersStore = useOrdersStore()
 
@@ -201,7 +203,7 @@ async function fetchUsers() {
 
 async function updateUserRole(user) {
   if (user.id === authStore.user?.id) {
-    alert('You cannot change your own role')
+    toast.warning('You cannot change your own role')
     user.role = authStore.user.role // Revert the change
     return
   }
@@ -209,11 +211,11 @@ async function updateUserRole(user) {
   updatingUsers.value.add(user.id)
   try {
     await api.patch(`/users/${user.id}/`, { role: user.role })
-    alert('User role updated successfully!')
+    toast.success('User role updated successfully!')
     // Refresh users to get updated data
     await fetchUsers()
   } catch (err) {
-    alert('Failed to update user role: ' + (err.response?.data?.error || err.message))
+    toast.error('Failed to update user role: ' + (err.response?.data?.error || err.message))
     // Revert the change on error
     await fetchUsers()
   } finally {
@@ -253,7 +255,7 @@ async function saveUser() {
   
   try {
     await api.patch(`/users/${editingUser.value.id}/`, editForm.value)
-    alert('User updated successfully!')
+    toast.success('User updated successfully!')
     await fetchUsers()
     closeEditModal()
   } catch (err) {

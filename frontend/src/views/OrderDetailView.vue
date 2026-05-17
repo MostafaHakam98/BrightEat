@@ -38,14 +38,24 @@
       <div class="mb-6" v-if="currentOrder">
         <button
           @click="router.push('/orders')"
-          class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 mb-4 flex items-center"
+          class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 transition-colors"
         >
           ← Back to Orders
         </button>
         <div class="flex justify-between items-start">
           <div>
             <h1 class="text-3xl font-bold text-gray-900 dark:text-white">{{ currentOrder?.restaurant_name || 'Unknown Restaurant' }}</h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-2">Code: <span class="font-mono font-semibold text-blue-600 dark:text-blue-400">{{ currentOrder?.code || 'N/A' }}</span></p>
+            <p class="text-gray-600 dark:text-gray-400 mt-2 flex items-center gap-2">
+              Code:
+              <span class="font-mono font-semibold text-blue-600 dark:text-blue-400">{{ currentOrder?.code || 'N/A' }}</span>
+              <button
+                @click="copyCode"
+                class="text-xs px-1.5 py-0.5 rounded border transition-colors"
+                :class="codeCopied
+                  ? 'border-green-400 text-green-600 dark:text-green-400'
+                  : 'border-gray-300 dark:border-gray-600 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-400'"
+              >{{ codeCopied ? '✓ Copied' : 'Copy' }}</button>
+            </p>
             <p class="text-gray-600 dark:text-gray-400">Collector: <span class="font-semibold">{{ currentOrder?.collector_name || 'N/A' }}</span></p>
             <p v-if="currentOrder?.cutoff_time" class="text-gray-600 dark:text-gray-400">Cutoff: <span class="font-semibold">{{ formatCutoffTime(currentOrder.cutoff_time) }}</span></p>
             <p v-if="currentOrder?.assigned_users_details && currentOrder.assigned_users_details.length > 0" class="text-gray-600 dark:text-gray-400 mt-2">
@@ -55,13 +65,17 @@
             <p v-if="currentOrder?.is_private" class="text-xs text-gray-500 dark:text-gray-400 mt-1">🔒 Private Order</p>
           </div>
           <div class="text-right">
-            <div class="inline-block px-4 py-2 rounded-lg font-semibold" :class="{
+            <div class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold" :class="{
               'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300': currentOrder?.status === 'OPEN',
-              'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300': currentOrder?.status === 'LOCKED',
+              'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300': currentOrder?.status === 'LOCKED',
               'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300': currentOrder?.status === 'ORDERED',
               'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300': currentOrder?.status === 'CLOSED',
             }">
-              Status: {{ currentOrder?.status || 'UNKNOWN' }}
+              <span v-if="currentOrder?.status === 'OPEN'">✅</span>
+              <span v-else-if="currentOrder?.status === 'LOCKED'">🔒</span>
+              <span v-else-if="currentOrder?.status === 'ORDERED'">📦</span>
+              <span v-else-if="currentOrder?.status === 'CLOSED'">✓</span>
+              {{ currentOrder?.status || 'UNKNOWN' }}
             </div>
             <p v-if="currentOrder?.status && currentOrder.status !== 'OPEN'" class="text-sm text-gray-500 dark:text-gray-400 mt-2">
               {{ currentOrder.status === 'LOCKED' ? 'Order is locked. No items can be added or removed.' : '' }}
@@ -97,8 +111,21 @@
             </div>
           </div>
 
+          <!-- Who hasn't ordered yet (collector view, locked/ordered) -->
+          <div
+            v-if="usersWithoutItems.length > 0"
+            class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4"
+          >
+            <p class="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">
+              ⚠ {{ usersWithoutItems.length }} participant{{ usersWithoutItems.length > 1 ? 's' : '' }} haven't added items yet
+            </p>
+            <p class="text-xs text-amber-700 dark:text-amber-400">
+              {{ usersWithoutItems.map(u => u.username).join(', ') }}
+            </p>
+          </div>
+
           <!-- Add Items Section (only if OPEN) -->
-          <div v-if="currentOrder?.status === 'OPEN'" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div v-if="currentOrder?.status === 'OPEN'" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Add Items to Order</h2>
             <div class="space-y-4">
               <div>
@@ -225,7 +252,7 @@
           </div>
 
           <!-- Order Items -->
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Order Items</h2>
             <div v-if="!currentOrder?.items || currentOrder.items.length === 0" class="text-gray-500 dark:text-gray-400 text-center py-4">
               No items yet. {{ currentOrder?.status === 'OPEN' ? 'Add items above!' : '' }}
@@ -279,7 +306,7 @@
         <!-- Sidebar -->
         <div class="space-y-6">
           <!-- Order Summary -->
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 dark:text-white">Summary</h2>
             <div class="space-y-2 text-sm">
               <div class="flex justify-between dark:text-gray-300">
@@ -306,7 +333,7 @@
           </div>
 
           <!-- Actions (Collector and Manager) -->
-          <div v-if="currentOrder?.collector === authStore.user?.id || authStore.isManager" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div v-if="currentOrder?.collector === authStore.user?.id || authStore.isManager" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Actions & Fees</h2>
             <p v-if="currentOrder?.collector === authStore.user?.id" class="text-sm text-gray-600 dark:text-gray-400 mb-4">
               <strong>How it works:</strong> You (the collector) pay the restaurant for everyone's items plus fees. 
@@ -365,7 +392,7 @@
               <button
                 v-if="currentOrder?.status === 'OPEN' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
                 @click="lockOrder"
-                class="w-full mt-2 bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full mt-2 bg-amber-500 dark:bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-600 dark:hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors"
               >
                 🔒 Lock Order
               </button>
@@ -373,7 +400,7 @@
               <button
                 v-if="!authStore.isManager && currentOrder?.status === 'OPEN' && currentOrder?.collector === authStore.user?.id"
                 @click="deleteOrder"
-                class="w-full mt-2 bg-red-800 dark:bg-red-700 text-white px-4 py-2 rounded-md hover:bg-red-900 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full mt-2 bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
               >
                 🗑️ Delete Order
               </button>
@@ -381,7 +408,7 @@
               <button
                 v-if="authStore.isManager && currentOrder?.collector === authStore.user?.id"
                 @click="deleteOrder"
-                class="w-full mt-2 bg-red-800 dark:bg-red-700 text-white px-4 py-2 rounded-md hover:bg-red-900 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full mt-2 bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
               >
                 🗑️ Delete Order (Manager)
               </button>
@@ -502,7 +529,7 @@
               <button
                 v-if="currentOrder?.status === 'LOCKED' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
                 @click="unlockOrder"
-                class="w-full mt-2 bg-orange-600 dark:bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-700 dark:hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
+                class="w-full mt-2 bg-orange-500 dark:bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-600 dark:hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
               >
                 🔓 Unlock Order
               </button>
@@ -518,7 +545,7 @@
               <button
                 v-if="currentOrder?.status === 'ORDERED' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
                 @click="closeOrder"
-                class="w-full bg-gray-600 dark:bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-700 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
               >
                 🔚 Close Order
               </button>
@@ -526,33 +553,33 @@
           </div>
 
           <!-- Manager-only actions section (always visible for managers) -->
-          <div v-if="authStore.isManager" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div v-if="authStore.isManager" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Manager Actions</h2>
             <div class="space-y-2">
               <button
                 v-if="currentOrder?.status === 'OPEN'"
                 @click="lockOrder"
-                class="w-full bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-amber-500 dark:bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-600 dark:hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors"
               >
                 🔒 Lock Order
               </button>
               <button
                 v-if="currentOrder?.status === 'LOCKED'"
                 @click="unlockOrder"
-                class="w-full bg-orange-600 dark:bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-700 dark:hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-orange-500 dark:bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-600 dark:hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
               >
                 🔓 Unlock Order
               </button>
               <button
                 v-if="currentOrder?.status === 'ORDERED'"
                 @click="closeOrder"
-                class="w-full bg-gray-600 dark:bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-700 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
               >
                 🔚 Close Order
               </button>
               <button
                 @click="deleteOrder"
-                class="w-full bg-red-800 dark:bg-red-700 text-white px-4 py-2 rounded-md hover:bg-red-900 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                class="w-full bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
               >
                 🗑️ Delete Order
               </button>
@@ -560,7 +587,7 @@
           </div>
 
           <!-- Share Message -->
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Share Message</h2>
             <textarea
               :value="currentOrder?.share_message || ''"
@@ -574,10 +601,15 @@
             >
               Copy Message
             </button>
+            <!-- Join QR code -->
+            <div v-if="currentOrder?.join_url" class="mt-4 flex flex-col items-center gap-2">
+              <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Scan to join</p>
+              <canvas ref="joinQrCanvas" class="rounded border border-gray-200 dark:border-gray-600"></canvas>
+            </div>
           </div>
 
           <!-- Payment Breakdown (if locked) -->
-          <div v-if="currentOrder?.status !== 'OPEN' && currentOrder?.payments && currentOrder.payments.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div v-if="currentOrder?.status !== 'OPEN' && currentOrder?.payments && currentOrder.payments.length > 0" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 dark:text-white">Payment Breakdown</h2>
             <!-- Show message if only collector's payment exists and it's paid -->
             <div v-if="currentOrder.payments.length === 1 && currentOrder.payments[0].user === currentOrder?.collector && currentOrder.payments[0].is_paid" class="p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded">
@@ -648,7 +680,7 @@
           </div>
 
           <!-- Instapay QR Code (if locked/ordered/closed and collector has Instapay link or QR code) -->
-          <div v-if="currentOrder?.status !== 'OPEN' && (currentOrder?.collector_instapay_link || currentOrder?.collector_instapay_qr_code_url)" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div v-if="currentOrder?.status !== 'OPEN' && (currentOrder?.collector_instapay_link || currentOrder?.collector_instapay_qr_code_url)" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 dark:text-white">Pay via Instapay</h2>
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Scan the QR code below to pay {{ currentOrder?.collector_name }} via Instapay</p>
             <div class="flex flex-col items-center">
@@ -683,7 +715,7 @@
           </div>
           
           <!-- Receipt View (if ordered) -->
-          <div v-if="currentOrder?.status === 'ORDERED' || currentOrder?.status === 'CLOSED'" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div v-if="currentOrder?.status === 'ORDERED' || currentOrder?.status === 'CLOSED'" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 dark:text-white">Order Receipt</h2>
             <div class="space-y-2 text-sm">
               <div class="flex justify-between border-b dark:border-gray-700 pb-2 dark:text-gray-300">
@@ -802,8 +834,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
 import { useAuthStore } from '../stores/auth'
 import { useWebSocketStore } from '../stores/websocket'
+import { useToast } from '../composables/useToast'
+import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
 import QRCode from 'qrcode'
+
+const toast = useToast()
+const { confirm: $confirm } = useConfirm()
 
 const route = useRoute()
 const router = useRouter()
@@ -821,6 +858,7 @@ const customItemPrice = ref(0)
 const customItemNote = ref('')
 const selectedItemUser = ref(null) // User to assign the item to (null = current user)
 const instapayQrCanvas = ref(null)
+const joinQrCanvas = ref(null)
 const transferCollectorId = ref('')
 const showAssignUsers = ref(false)
 const selectedUsers = ref([])
@@ -863,6 +901,26 @@ const currentOrder = computed(() => {
 
 const availableMenuItems = computed(() => {
   return ordersStore.menuItems.filter(item => item.is_available)
+})
+
+// Copy order code chip
+const codeCopied = ref(false)
+function copyCode() {
+  const code = currentOrder.value?.code
+  if (!code) return
+  navigator.clipboard.writeText(code).then(() => {
+    codeCopied.value = true
+    setTimeout(() => { codeCopied.value = false }, 2000)
+  })
+}
+
+// Who hasn't ordered yet — shown to the collector on LOCKED/ORDERED orders
+const usersWithoutItems = computed(() => {
+  const order = currentOrder.value
+  if (!order || !['LOCKED', 'ORDERED'].includes(order.status)) return []
+  if (order.collector !== authStore.user?.id) return []
+  const usersWithItems = new Set((order.items || []).map(i => i.user))
+  return (order.participants || []).filter(p => !usersWithItems.has(p.id))
 })
 
 // Helper function to format prices safely
@@ -965,12 +1023,20 @@ async function loadOrder() {
         fee_split_rule: ordersStore.currentOrder.fee_split_rule || 'equal',
         instapay_link: ordersStore.currentOrder.instapay_link || '',
       }
-      console.log('Fees set:', fees.value)
+      // Auto-fill preset when collector opens an order with all-zero fees
+      if (ordersStore.currentOrder.status === 'OPEN' &&
+          ordersStore.currentOrder.collector === authStore.user?.id) {
+        const preset = loadFeePreset(ordersStore.currentOrder.restaurant)
+        if (preset && fees.value.delivery_fee === 0 && fees.value.tip === 0 && fees.value.service_fee === 0) {
+          fees.value = { ...fees.value, ...preset }
+        }
+      }
     }
     
-    // Generate QR code for collector's Instapay link
+    // Generate QR codes
     await nextTick()
     generateInstapayQR()
+    generateJoinQR()
     
     // Load users for assignment (any user can assign) and for item assignment
     if (ordersStore.currentOrder) {
@@ -1018,6 +1084,66 @@ async function loadOrder() {
   }
 }
 
+// --- Fee presets (localStorage, keyed by restaurant ID) ---
+function loadFeePreset(restaurantId) {
+  const raw = localStorage.getItem(`fee_preset_${restaurantId}`)
+  return raw ? JSON.parse(raw) : null
+}
+function saveFeePreset(restaurantId, f) {
+  localStorage.setItem(`fee_preset_${restaurantId}`, JSON.stringify({
+    delivery_fee: f.delivery_fee,
+    tip: f.tip,
+    service_fee: f.service_fee,
+    fee_split_rule: f.fee_split_rule,
+  }))
+}
+
+// --- Simple canvas confetti ---
+function launchConfetti() {
+  const canvas = document.createElement('canvas')
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999'
+  document.body.appendChild(canvas)
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
+  const ctx = canvas.getContext('2d')
+  const colors = ['#6366F1','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#14B8A6','#F97316']
+  const pieces = Array.from({ length: 100 }, () => ({
+    x: Math.random() * canvas.width, y: Math.random() * canvas.height - canvas.height,
+    r: Math.random() * 6 + 4, d: Math.random() * 80,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    tiltAngle: 0, tiltInc: Math.random() * 0.07 + 0.05,
+  }))
+  let angle = 0
+  const start = Date.now()
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    angle += 0.01
+    pieces.forEach(p => {
+      p.tiltAngle += p.tiltInc
+      p.y += (Math.cos(angle + p.d) + 3 + p.r / 2) * 0.9
+      p.x += Math.sin(angle) * 0.9
+      ctx.beginPath()
+      ctx.lineWidth = p.r / 2
+      ctx.strokeStyle = p.color
+      ctx.moveTo(p.x + Math.sin(p.tiltAngle) * 15 + p.r / 4, p.y)
+      ctx.lineTo(p.x + Math.sin(p.tiltAngle) * 15, p.y + Math.sin(p.tiltAngle) * 15 + p.r / 4)
+      ctx.stroke()
+    })
+    if (Date.now() - start < 2800) requestAnimationFrame(draw)
+    else document.body.removeChild(canvas)
+  }
+  draw()
+}
+
+async function generateJoinQR() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (order?.join_url && joinQrCanvas.value) {
+    try {
+      await QRCode.toCanvas(joinQrCanvas.value, order.join_url, { width: 160, margin: 1 })
+    } catch (e) { console.error('Join QR failed', e) }
+  }
+}
+
 async function generateInstapayQR() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (order?.collector_instapay_link && instapayQrCanvas.value) {
@@ -1036,7 +1162,7 @@ function copyCollectorInstapayLink() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (order?.collector_instapay_link) {
     navigator.clipboard.writeText(order.collector_instapay_link)
-    alert('Instapay link copied to clipboard!')
+    toast.success('Instapay link copied to clipboard!')
   }
 }
 
@@ -1075,24 +1201,24 @@ onUnmounted(() => {
 
 async function addMenuItem() {
   if (!selectedMenuItem.value || !itemQuantity.value) {
-    alert('Please select an item and quantity')
+    toast.warning('Please select an item and quantity')
     return
   }
-  
+
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('This order is locked and cannot be modified')
+    toast.warning('This order is locked and cannot be modified')
     return
   }
 
   // Check if user is trying to assign to someone else but doesn't have permission
   if (selectedItemUser.value && order.collector !== authStore.user?.id && !authStore.isManager) {
-    alert('Only collectors and managers can assign items to other users')
+    toast.warning('Only collectors and managers can assign items to other users')
     return
   }
 
@@ -1129,7 +1255,7 @@ async function addMenuItem() {
       generateInstapayQR()
     } else {
       const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
-      alert('Failed to add item: ' + errorMsg)
+      toast.error('Failed to add item: ' + errorMsg)
     }
   } finally {
     loading.value = wasLoading
@@ -1138,24 +1264,24 @@ async function addMenuItem() {
 
 async function addCustomItem() {
   if (!customItemName.value || !customItemPrice.value) {
-    alert('Please enter item name and price')
+    toast.warning('Please enter item name and price')
     return
   }
-  
+
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('This order is locked and cannot be modified')
+    toast.warning('This order is locked and cannot be modified')
     return
   }
 
   // Check if user is trying to assign to someone else but doesn't have permission
   if (selectedItemUser.value && order.collector !== authStore.user?.id && !authStore.isManager) {
-    alert('Only collectors and managers can assign items to other users')
+    toast.warning('Only collectors and managers can assign items to other users')
     return
   }
 
@@ -1211,7 +1337,7 @@ async function addCustomItem() {
       }
     } else {
       const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
-      alert('Failed to add custom item: ' + errorMsg)
+      toast.error('Failed to add custom item: ' + errorMsg)
     }
   } finally {
     loading.value = wasLoading
@@ -1252,10 +1378,10 @@ async function handleAddToMenu() {
       await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
       await nextTick()
       generateInstapayQR()
-      alert('Item added to menu successfully!')
+      toast.success('Item added to menu successfully!')
     } else {
       const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
-      alert('Failed to add item to menu: ' + errorMsg)
+      toast.error('Failed to add item to menu: ' + errorMsg)
     }
   } finally {
     loading.value = wasLoading
@@ -1275,10 +1401,10 @@ async function handleUpdatePrice() {
       await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
       await nextTick()
       generateInstapayQR()
-      alert('Menu item price updated successfully!')
+      toast.success('Menu item price updated successfully!')
     } else {
       const errorMsg = result.error?.detail || result.error?.error || JSON.stringify(result.error)
-      alert('Failed to update price: ' + errorMsg)
+      toast.error('Failed to update price: ' + errorMsg)
     }
   } finally {
     loading.value = wasLoading
@@ -1303,25 +1429,22 @@ function dismissUpdatePricePrompt() {
 async function removeItem(itemId) {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('This order is locked and cannot be modified')
+    toast.warning('This order is locked and cannot be modified')
     return
   }
-  
-  if (!confirm('Remove this item?')) return
-  
+
+  if (!(await $confirm('Remove this item?'))) return
+
   loading.value = true
   const result = await ordersStore.removeOrderItem(itemId)
-  
-  if (result.success) {
-    // Don't manually refetch - WebSocket will broadcast the update automatically
-    // await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-  } else {
-    alert('Failed to remove item')
+
+  if (!result.success) {
+    toast.error('Failed to remove item')
   }
   loading.value = false
 }
@@ -1329,23 +1452,22 @@ async function removeItem(itemId) {
 async function updateFees() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('Fees can only be updated when order is open')
+    toast.warning('Fees can only be updated when order is open')
     return
   }
-  
+
   loading.value = true
   try {
     await api.patch(`/orders/${order.id}/`, fees.value)
-    // Don't manually refetch - WebSocket will broadcast the update automatically
-    // await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Fees updated successfully')
+    saveFeePreset(order.restaurant, fees.value)
+    toast.success('Fees updated successfully')
   } catch (error) {
-    alert('Failed to update fees: ' + (error.response?.data?.detail || error.message))
+    toast.error('Failed to update fees: ' + (error.response?.data?.detail || error.message))
   }
   loading.value = false
 }
@@ -1353,19 +1475,19 @@ async function updateFees() {
 async function lockOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  if (!confirm('Lock this order? Users won\'t be able to add or remove items.')) return
-  
+
+  if (!(await $confirm("Lock this order? Users won't be able to add or remove items.", 'Lock Order'))) return
+
   loading.value = true
   const result = await ordersStore.lockOrder(order.id)
   if (result.success) {
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Order locked successfully')
+    toast.success('Order locked successfully')
   } else {
-    alert('Failed to lock order: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to lock order: ' + (result.error?.detail || JSON.stringify(result.error)))
   }
   loading.value = false
 }
@@ -1373,19 +1495,19 @@ async function lockOrder() {
 async function markOrdered() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  if (!confirm('Mark this order as ordered with the restaurant?')) return
-  
+
+  if (!(await $confirm('Mark this order as ordered with the restaurant?', 'Mark as Ordered'))) return
+
   loading.value = true
   const result = await ordersStore.markOrdered(order.id)
   if (result.success) {
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Order marked as ordered')
+    toast.success('Order marked as ordered')
   } else {
-    alert('Failed to mark as ordered: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to mark as ordered: ' + (result.error?.detail || JSON.stringify(result.error)))
   }
   loading.value = false
 }
@@ -1393,19 +1515,19 @@ async function markOrdered() {
 async function closeOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  if (!confirm('Close this order? This action cannot be undone.')) return
-  
+
+  if (!(await $confirm('Close this order? This action cannot be undone.', 'Close Order'))) return
+
   loading.value = true
   const result = await ordersStore.closeOrder(order.id)
   if (result.success) {
-    alert('Order closed successfully')
-    router.push('/orders')
+    launchConfetti()
+    setTimeout(() => router.push('/orders'), 2800)
   } else {
-    alert('Failed to close order: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to close order: ' + (result.error?.detail || JSON.stringify(result.error)))
     loading.value = false
   }
 }
@@ -1413,19 +1535,19 @@ async function closeOrder() {
 async function unlockOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
 
-  if (!confirm('Unlock this order? Users will be able to add or remove items again. Payments will be cleared and recalculated on next lock.')) return
+  if (!(await $confirm('Unlock this order? Users will be able to add or remove items again. Payments will be cleared and recalculated on next lock.', 'Unlock Order'))) return
 
   loading.value = true
   const result = await ordersStore.unlockOrder(order.id)
   if (result.success) {
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Order unlocked successfully')
+    toast.success('Order unlocked successfully')
   } else {
-    alert('Failed to unlock order: ' + (result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to unlock order: ' + (result.error?.detail || JSON.stringify(result.error)))
   }
   loading.value = false
 }
@@ -1433,26 +1555,25 @@ async function unlockOrder() {
 async function deleteOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  // Managers can delete any order, collectors can only delete OPEN orders
+
   if (order.status !== 'OPEN' && !authStore.isManager) {
-    alert('Can only delete open orders')
+    toast.warning('Can only delete open orders')
     return
   }
-  
+
   const statusText = order.status !== 'OPEN' ? ` (Status: ${order.status})` : ''
-  if (!confirm(`Are you sure you want to delete this order${statusText}? This action cannot be undone.`)) return
-  
+  if (!(await $confirm(`Are you sure you want to delete this order${statusText}? This action cannot be undone.`, 'Delete Order'))) return
+
   loading.value = true
   const result = await ordersStore.deleteOrder(order.id)
   if (result.success) {
-    alert('Order deleted successfully')
+    toast.success('Order deleted successfully')
     router.replace('/orders')
   } else {
-    alert('Failed to delete order: ' + (result.error?.error || result.error?.detail || JSON.stringify(result.error)))
+    toast.error('Failed to delete order: ' + (result.error?.error || result.error?.detail || JSON.stringify(result.error)))
     loading.value = false
   }
 }
@@ -1460,14 +1581,13 @@ async function deleteOrder() {
 async function copyShareMessage() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order || !order.share_message) {
-    alert('Share message not available')
+    toast.warning('Share message not available')
     return
   }
   try {
     await navigator.clipboard.writeText(order.share_message)
-    alert('Share message copied to clipboard!')
+    toast.success('Share message copied to clipboard!')
   } catch (error) {
-    // Fallback for older browsers
     const textArea = document.createElement('textarea')
     textArea.value = order.share_message
     textArea.style.position = 'fixed'
@@ -1476,24 +1596,24 @@ async function copyShareMessage() {
     textArea.select()
     try {
       document.execCommand('copy')
-      alert('Share message copied to clipboard!')
+      toast.success('Share message copied to clipboard!')
     } catch (err) {
-      alert('Failed to copy message. Please select and copy manually.')
+      toast.error('Failed to copy message. Please select and copy manually.')
     }
     document.body.removeChild(textArea)
   }
 }
 
 async function markPaymentPaid(paymentId) {
-  if (!confirm('Mark this payment as paid?')) return
-  
+  if (!(await $confirm('Mark this payment as paid?', 'Confirm Payment'))) return
+
   loading.value = true
   try {
-    const response = await api.post(`/payments/${paymentId}/mark_paid/`)
+    await api.post(`/payments/${paymentId}/mark_paid/`)
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    alert('Payment marked as paid!')
+    toast.success('Payment marked as paid!')
   } catch (error) {
-    alert('Failed to mark payment as paid')
+    toast.error('Failed to mark payment as paid')
   }
   loading.value = false
 }
@@ -1540,69 +1660,64 @@ function deselectAllUsers() {
 async function updateAssignedUsers() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.status !== 'OPEN') {
-    alert('Can only update assigned users for open orders')
+    toast.warning('Can only update assigned users for open orders')
     return
   }
-  
+
   if (selectedUsers.value.length === 0) {
-    alert('Please select at least one user')
+    toast.warning('Please select at least one user')
     return
   }
-  
-  // Validate: if items or cost is provided, both must be provided
+
   if ((assignmentItems.value && !assignmentTotalCost.value) || (assignmentTotalCost.value && !assignmentItems.value)) {
-    alert('Please provide both number of items and total cost, or leave both empty')
+    toast.warning('Please provide both number of items and total cost, or leave both empty')
     return
   }
-  
+
   loading.value = true
   try {
-    const updateData = {
-      assigned_users: selectedUsers.value
-    }
-    
-    // If items and total cost are provided, include them for backend to create items
+    const updateData = { assigned_users: selectedUsers.value }
+
     if (assignmentItems.value && assignmentTotalCost.value) {
       updateData.assignment_items = assignmentItems.value
       updateData.assignment_total_cost = assignmentTotalCost.value
     }
-    
+
     await api.patch(`/orders/${order.id}/`, updateData)
-    
-    // Reset assignment fields before reloading
+
     const hadItems = assignmentItems.value && assignmentTotalCost.value
     assignmentItems.value = null
     assignmentTotalCost.value = null
-    
+
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
-    
-    alert('Assigned users updated successfully' + (hadItems ? '. Items have been created and split evenly.' : ''))
+
+    toast.success('Assigned users updated successfully' + (hadItems ? '. Items split evenly.' : ''))
     showAssignUsers.value = false
   } catch (error) {
-    alert('Failed to update assigned users: ' + (error.response?.data?.error || error.response?.data?.detail || error.message))
+    toast.error('Failed to update assigned users: ' + (error.response?.data?.error || error.response?.data?.detail || error.message))
   }
   loading.value = false
 }
 
 async function transferCollector() {
   if (!transferCollectorId.value) {
-    alert('Please select a new collector')
+    toast.warning('Please select a new collector')
     return
   }
-  
+
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
-  if (!confirm(`Transfer collector role to the selected participant?`)) return
-  
+
+  if (!(await $confirm('Transfer collector role to the selected participant?', 'Transfer Collector'))) return
+
   loading.value = true
   try {
     await api.post(`/orders/${order.id}/transfer_collector/`, {
@@ -1610,9 +1725,9 @@ async function transferCollector() {
     })
     await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
     transferCollectorId.value = ''
-    alert('Collector role transferred successfully')
+    toast.success('Collector role transferred successfully')
   } catch (error) {
-    alert('Failed to transfer collector: ' + (error.response?.data?.error || error.message))
+    toast.error('Failed to transfer collector: ' + (error.response?.data?.error || error.message))
   }
   loading.value = false
 }
@@ -1620,34 +1735,34 @@ async function transferCollector() {
 function openInstapay() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.instapay_link) {
     window.open(order.instapay_link, '_blank')
   } else {
-    alert('Instapay link not set by collector')
+    toast.warning('Instapay link not set by collector')
   }
 }
 
 function copyInstapayLink() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
-  
+
   if (order.instapay_link) {
     navigator.clipboard.writeText(order.instapay_link)
-    alert('Instapay link copied to clipboard!')
+    toast.success('Instapay link copied to clipboard!')
   }
 }
 
 async function copyReceipt() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
-    alert('Order not loaded')
+    toast.error('Order not loaded')
     return
   }
   
@@ -1669,9 +1784,8 @@ ${order.instapay_link ? `Pay via Instapay: ${order.instapay_link}` : ''}`
   
   try {
     await navigator.clipboard.writeText(receipt)
-    alert('Receipt copied to clipboard! Share it in the group.')
+    toast.success('Receipt copied! Share it in the group.')
   } catch (error) {
-    // Fallback for older browsers
     const textArea = document.createElement('textarea')
     textArea.value = receipt
     textArea.style.position = 'fixed'
@@ -1680,9 +1794,9 @@ ${order.instapay_link ? `Pay via Instapay: ${order.instapay_link}` : ''}`
     textArea.select()
     try {
       document.execCommand('copy')
-      alert('Receipt copied to clipboard! Share it in the group.')
+      toast.success('Receipt copied! Share it in the group.')
     } catch (err) {
-      alert('Failed to copy receipt. Please select and copy manually.')
+      toast.error('Failed to copy receipt. Please select and copy manually.')
     }
     document.body.removeChild(textArea)
   }
