@@ -50,6 +50,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'username': _usernameController.text.trim(),
         'email': _emailController.text.trim(),
         'password': _passwordController.text,
+        'password_confirm': _passwordConfirmController.text,
         'first_name': _firstNameController.text.trim(),
         'last_name': _lastNameController.text.trim(),
         'role': _role,
