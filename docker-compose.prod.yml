@@ -1,6 +1,8 @@
 # Production docker-compose file using pre-built images
 # Usage: docker-compose -f docker-compose.prod.yml up -d
 
+name: orderq
+
 services:
   db:
     image: postgres:15-alpine
@@ -27,7 +29,7 @@ services:
       retries: 5
 
   backend:
-    image: brighteat-backend:latest
+    image: orderq-backend:latest
     command: /app/start.sh
     volumes:
       - .:/app
@@ -57,12 +59,12 @@ services:
         condition: service_healthy
 
   frontend:
-    image: brighteat-frontend:latest
+    image: orderq-frontend:latest
     depends_on:
       - backend
 
   flutter-pwa:
-    image: brighteat-flutter-pwa:latest
+    image: orderq-flutter-pwa:latest
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
