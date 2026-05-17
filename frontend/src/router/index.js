@@ -105,8 +105,14 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
+  // Hive redirects to /?sso=success (or /?sso_error=...) after Microsoft auth.
+  // Forward to /sso-callback so SSOCallbackView can complete the flow.
+  if (to.path !== '/sso-callback' && (to.query.sso === 'success' || to.query.sso_error)) {
+    return next({ path: '/sso-callback', query: to.query, replace: true })
+  }
+
   const authStore = useAuthStore()
-  
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next('/login')
   } else if (to.meta.requiresManager && !authStore.isManager && !authStore.isAdmin) {
