@@ -83,15 +83,26 @@ class LoginSerializer(serializers.Serializer):
         # Resolve local username if the user already exists; otherwise pass
         # the raw value so that HiveAuthBackend can attempt a remote lookup.
         login_as = username
+        hive_email_fallback = None
         if email:
             try:
                 local = User.objects.get(email=email)
                 login_as = local.username
+                # Keep the original email: local username may differ from the
+                # Hive username (e.g. "moustafa.hakam" vs "moustafa_hakam"),
+                # so we retry with the email if the first attempt fails.
+                hive_email_fallback = email
             except User.DoesNotExist:
                 login_as = email  # Hive accepts email in the username field
 
         # authenticate() tries ModelBackend first, then HiveAuthBackend
         user = authenticate(username=login_as, password=password)
+
+        # If the resolved local username didn't work in Hive, retry with the
+        # original email so Hive can look the account up by email field.
+        if not user and hive_email_fallback:
+            user = authenticate(username=hive_email_fallback, password=password)
+
         if not user:
             raise serializers.ValidationError("Invalid credentials")
         
