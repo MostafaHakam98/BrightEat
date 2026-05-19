@@ -1194,6 +1194,15 @@ watch(() => currentOrder.value?.collector_instapay_link, () => {
   })
 })
 
+// Watch for join_url to regenerate join QR code whenever order updates
+watch(() => currentOrder.value?.join_url, (newUrl) => {
+  if (newUrl) {
+    nextTick(() => {
+      generateJoinQR()
+    })
+  }
+})
+
 // Disconnect WebSocket when component unmounts
 onUnmounted(() => {
   wsStore.disconnect()
