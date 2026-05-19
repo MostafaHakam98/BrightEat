@@ -84,6 +84,7 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def partial_update(self, request, *args, **kwargs):
         """Override partial_update to check permissions for role changes"""
+        kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
     
     @action(detail=False, methods=['get'])
