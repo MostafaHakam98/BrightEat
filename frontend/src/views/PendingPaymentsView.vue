@@ -32,7 +32,7 @@
                 <h3 class="text-lg font-semibold dark:text-white">{{ payment.restaurant_name }}</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Order Code: <span class="font-mono">{{ payment.order_code }}</span></p>
                 <p class="text-sm text-gray-600 dark:text-gray-400">Collector: {{ payment.collector_name }}</p>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Status: 
+                <p class="text-sm text-gray-600 dark:text-gray-400">Status:
                   <span :class="{
                     'text-yellow-600 dark:text-yellow-400': payment.order_status === 'LOCKED',
                     'text-blue-600 dark:text-blue-400': payment.order_status === 'ORDERED',
@@ -42,6 +42,34 @@
                   </span>
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white mt-2">{{ formatPrice(payment.amount) }} EGP</p>
+
+                <!-- Instapay payment section -->
+                <div v-if="payment.collector_instapay_link || payment.collector_instapay_qr_code_url" class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-700">
+                  <p class="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-2">Pay via Instapay</p>
+                  <a
+                    v-if="payment.collector_instapay_link"
+                    :href="payment.collector_instapay_link"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                  >
+                    Open Instapay Link ↗
+                  </a>
+                  <div v-if="payment.collector_instapay_qr_code_url" class="mt-2">
+                    <button
+                      @click="toggleQR(payment.payment_id)"
+                      class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {{ expandedQR === payment.payment_id ? 'Hide QR Code' : 'Show QR Code' }}
+                    </button>
+                    <img
+                      v-if="expandedQR === payment.payment_id"
+                      :src="payment.collector_instapay_qr_code_url"
+                      alt="Instapay QR Code"
+                      class="mt-2 w-40 h-40 object-contain border border-gray-200 dark:border-gray-600 rounded"
+                    />
+                  </div>
+                </div>
               </div>
               <div class="flex flex-col space-y-2 ml-4">
                 <router-link
@@ -126,6 +154,11 @@ const loading = ref(true)
 const pendingPayments = ref([])
 const paymentsOwedToMe = ref([])
 const markingPaid = ref(null)
+const expandedQR = ref(null)
+
+function toggleQR(paymentId) {
+  expandedQR.value = expandedQR.value === paymentId ? null : paymentId
+}
 
 const paymentsIOwe = computed(() => {
   return pendingPayments.value.filter(p => p.payment_type === 'owed_by_me' || !p.payment_type)

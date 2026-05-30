@@ -21,13 +21,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-g@l$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$bda5*bixmkky')
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['*']  # Configure appropriately for production
+# SECURITY WARNING: keep the secret key used in production secret!
+_SECRET_KEY_INSECURE_DEFAULT = 'django-insecure-g@l$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$bda5*bixmkky'
+SECRET_KEY = os.environ.get('SECRET_KEY', _SECRET_KEY_INSECURE_DEFAULT)
+if not DEBUG and SECRET_KEY == _SECRET_KEY_INSECURE_DEFAULT:
+    raise RuntimeError(
+        "SECRET_KEY environment variable must be set to a secure value in production (DEBUG=False)."
+    )
+
+_allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '')
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(',') if h.strip()] or ['localhost', '127.0.0.1', 'backend']
 
 
 # Application definition
@@ -166,6 +172,10 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'DEFAULT_THROTTLE_CLASSES': [],
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '10/minute',
+    },
 }
 
 # CSRF settings - Exempt API endpoints from CSRF
@@ -188,11 +198,11 @@ else:
     CSRF_COOKIE_SECURE = False
     SESSION_COOKIE_SECURE = False
 
-CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_HTTPONLY = True
 
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -234,6 +244,40 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'json': {
+            '()': 'django.utils.log.ServerFormatter',
+            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'json',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARNING',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.environ.get('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'orders': {
+            'handlers': ['console'],
+            'level': os.environ.get('APP_LOG_LEVEL', 'DEBUG' if DEBUG else 'INFO'),
+            'propagate': False,
+        },
+    },
+}
 
 # Channels Configuration
 ASGI_APPLICATION = 'OrderQ.asgi.application'

@@ -12,7 +12,7 @@ class HiveAuthBackend:
     """Authenticate using Hive (BSACAIPortal) credentials.
 
     Called as a fallback when local Django auth fails or the user doesn't
-    exist locally yet. On successful Hive auth the local BrightEat user is
+    exist locally yet. On successful Hive auth the local OrderQ user is
     auto-provisioned (or synced if it already exists).
     """
 
@@ -54,7 +54,7 @@ class HiveAuthBackend:
         first_name = hive_user.get('first_name', '')
         last_name = hive_user.get('last_name', '')
 
-        # Prefer linking by email so an existing BrightEat account with the
+        # Prefer linking by email so an existing OrderQ account with the
         # same email is reused rather than creating a parallel account.
         user = None
         if email:

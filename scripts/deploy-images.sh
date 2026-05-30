@@ -7,14 +7,14 @@ set -e
 
 REMOTE_USER="ubuntu"
 REMOTE_HOST="51.20.151.57"
-REMOTE_PATH="/home/ubuntu/BrightEat"
+REMOTE_PATH="/home/ubuntu/OrderQ"
 SSH_KEY="$HOME/.ssh/ACAIPortal.pem"
 EXPORT_DIR="./docker-images"
 
 # Image names and tags
-BACKEND_IMAGE="brighteat-backend:latest"
-FRONTEND_IMAGE="brighteat-frontend:latest"
-FLUTTER_PWA_IMAGE="brighteat-flutter-pwa:latest"
+BACKEND_IMAGE="orderq-backend:latest"
+FRONTEND_IMAGE="orderq-frontend:latest"
+FLUTTER_PWA_IMAGE="orderq-flutter-pwa:latest"
 
 echo "🚀 Starting deployment process..."
 
@@ -45,7 +45,7 @@ echo "✅ Images copied to remote server!"
 # Step 5: Load images on remote server
 echo "📥 Step 5: Loading images on remote server..."
 ssh -i $SSH_KEY $REMOTE_USER@$REMOTE_HOST << 'ENDSSH'
-cd /home/ubuntu/BrightEat
+cd /home/ubuntu/OrderQ
 if [ -f "docker-images/backend.tar" ]; then
     echo "Loading backend image..."
     docker load -i docker-images/backend.tar

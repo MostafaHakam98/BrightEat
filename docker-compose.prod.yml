@@ -36,19 +36,22 @@ services:
     ports:
       - "19992:8000"
     environment:
-      - DEBUG=True
+      - DEBUG=False
       - DB_NAME=orderq
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - DB_HOST=db
       - DB_PORT=5432
-      - SECRET_KEY=django-insecure-g@l$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$bda5*bixmkky
+      - SECRET_KEY=django-insecure-g@l$$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$$bda5*bixmkky
+      - ALLOWED_HOSTS=51.20.151.57,orderq.acai.brightskiesinc.com,localhost,backend
       - FRONTEND_URL=https://orderq.acai.brightskiesinc.com
       - USE_HTTPS=True
       - CSRF_TRUSTED_ORIGINS=https://51.20.151.57:19991,https://orderq.acai.brightskiesinc.com
       - CORS_ALLOWED_ORIGINS=https://51.20.151.57:19991,https://orderq.acai.brightskiesinc.com
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - FLARESOLVERR_URL=http://flaresolverr:8191
       - HIVE_URL=https://acai.brightskiesinc.com
     networks:
@@ -61,6 +64,64 @@ services:
         condition: service_healthy
       flaresolverr:
         condition: service_started
+
+  celery-worker:
+    image: orderq-backend:latest
+    command: celery -A OrderQ worker --loglevel=info --concurrency=2
+    volumes:
+      - .:/app
+    environment:
+      - DEBUG=False
+      - DB_NAME=orderq
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - SECRET_KEY=django-insecure-g@l$$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$$bda5*bixmkky
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - FLARESOLVERR_URL=http://flaresolverr:8191
+      - HIVE_URL=https://acai.brightskiesinc.com
+    networks:
+      - default
+      - hive-network
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery-beat:
+    image: orderq-backend:latest
+    command: celery -A OrderQ beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    environment:
+      - DEBUG=False
+      - DB_NAME=orderq
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - SECRET_KEY=django-insecure-g@l$$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$$bda5*bixmkky
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    networks:
+      - default
+      - hive-network
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    restart: unless-stopped
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest

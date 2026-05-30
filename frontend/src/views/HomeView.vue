@@ -71,6 +71,59 @@
               class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
             />
           </div>
+
+          <!-- Fee Preset -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Fee Preset</label>
+            <select
+              v-model="selectedPresetId"
+              @change="applyPreset"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            >
+              <option :value="null">— Custom / No Preset —</option>
+              <option v-for="p in ordersStore.feePresets" :key="p.id" :value="p.id">
+                {{ p.name }} (delivery {{ p.delivery_fee }}, tip {{ p.tip }})
+              </option>
+            </select>
+          </div>
+
+          <!-- Fee fields (shown collapsed by default, expanded when preset applied or toggled) -->
+          <div>
+            <button
+              type="button"
+              @click="showFeeFields = !showFeeFields"
+              class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              {{ showFeeFields ? 'Hide fee details ▲' : 'Edit fee details ▼' }}
+            </button>
+            <div v-if="showFeeFields" class="mt-2 grid grid-cols-3 gap-2">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Delivery</label>
+                <input v-model.number="newOrder.delivery_fee" type="number" min="0" step="0.01"
+                  class="mt-1 block w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Tip</label>
+                <input v-model.number="newOrder.tip" type="number" min="0" step="0.01"
+                  class="mt-1 block w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Service</label>
+                <input v-model.number="newOrder.service_fee" type="number" min="0" step="0.01"
+                  class="mt-1 block w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+              </div>
+              <div class="col-span-3">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Fee Split</label>
+                <select v-model="newOrder.fee_split_rule"
+                  class="mt-1 block w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white">
+                  <option value="equal">Equal</option>
+                  <option value="proportional">Proportional</option>
+                  <option value="collector_pays">Collector Pays</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div class="flex items-center">
             <input
               v-model="newOrder.is_private"
@@ -222,6 +275,10 @@ const newOrder = ref({
   menu: null,
   cutoff_time: '',
   is_private: false,
+  delivery_fee: 30,
+  tip: 30,
+  service_fee: 0,
+  fee_split_rule: 'equal',
 })
 const joinCode = ref('')
 const loading = ref(false)
@@ -230,6 +287,19 @@ const availableMenus = ref([])
 const loadingMenus = ref(false)
 const pendingPayments = ref([])
 const markingPaid = ref(null)
+const selectedPresetId = ref(null)
+const showFeeFields = ref(false)
+
+function applyPreset() {
+  const preset = ordersStore.feePresets.find(p => p.id === selectedPresetId.value)
+  if (preset) {
+    newOrder.value.delivery_fee = parseFloat(preset.delivery_fee)
+    newOrder.value.tip = parseFloat(preset.tip)
+    newOrder.value.service_fee = parseFloat(preset.service_fee)
+    newOrder.value.fee_split_rule = preset.fee_split_rule || 'equal'
+    showFeeFields.value = true
+  }
+}
 
 const activeOrders = computed(() => {
   return ordersStore.orders.filter(o => o.status !== 'CLOSED')
@@ -322,9 +392,12 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleOutsideCli
 
 onMounted(async () => {
   loadingOrders.value = true
-  await ordersStore.fetchRestaurants()
-  await ordersStore.fetchOrders()
-  await fetchPendingPayments()
+  await Promise.all([
+    ordersStore.fetchRestaurants(),
+    ordersStore.fetchOrders(),
+    ordersStore.fetchFeePresets(),
+    fetchPendingPayments(),
+  ])
   loadingOrders.value = false
 
   // Pre-fill form when navigated here via ↺ Reorder
@@ -356,24 +429,27 @@ async function createOrder() {
   const orderData = {
     restaurant: parseInt(newOrder.value.restaurant),
     is_private: newOrder.value.is_private,
+    delivery_fee: newOrder.value.delivery_fee,
+    tip: newOrder.value.tip,
+    service_fee: newOrder.value.service_fee,
+    fee_split_rule: newOrder.value.fee_split_rule,
   }
-  
-  // Include menu if selected
+
   if (newOrder.value.menu) {
     orderData.menu = parseInt(newOrder.value.menu)
   }
-  
-  // Only include cutoff_time if it's provided
+
   if (newOrder.value.cutoff_time) {
     orderData.cutoff_time = newOrder.value.cutoff_time
   }
-  
+
   const result = await ordersStore.createOrder(orderData)
-  
+
   if (result.success) {
     router.push(`/orders/${result.data.code}`)
-    // Reset form
-    newOrder.value = { restaurant: '', menu: null, cutoff_time: '', is_private: false }
+    newOrder.value = { restaurant: '', menu: null, cutoff_time: '', is_private: false, delivery_fee: 30, tip: 30, service_fee: 0, fee_split_rule: 'equal' }
+    selectedPresetId.value = null
+    showFeeFields.value = false
     availableMenus.value = []
   } else {
     toast.error('Failed to create order: ' + (result.error?.detail || JSON.stringify(result.error)))

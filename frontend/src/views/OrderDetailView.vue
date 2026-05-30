@@ -135,18 +135,77 @@
                     ({{ currentOrder.menu_name }})
                   </span>
                 </label>
-                <select
-                  v-model="selectedMenuItem"
-                  :disabled="availableMenuItems.length === 0"
-                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed dark:bg-gray-700 dark:text-white"
-                >
-                  <option value="">
-                    {{ availableMenuItems.length === 0 ? 'No menu items available' : 'Select menu item' }}
-                  </option>
-                  <option v-for="item in availableMenuItems" :key="item.id" :value="item.id">
-                    {{ item.name }} - {{ item.price }} EGP
-                  </option>
-                </select>
+
+                <!-- Searchable section-grouped picker -->
+                <div class="relative" ref="menuPickerRef">
+                  <!-- Selected item display / search input -->
+                  <div
+                    class="w-full flex items-center border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden"
+                    :class="availableMenuItems.length === 0 ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-700' : 'bg-white dark:bg-gray-700'"
+                  >
+                    <!-- Thumbnail of selected item -->
+                    <img
+                      v-if="selectedMenuItemObj?.image_url"
+                      :src="selectedMenuItemObj.image_url"
+                      :alt="selectedMenuItemObj.name"
+                      class="w-9 h-9 object-cover ml-1 rounded shrink-0"
+                      @error="$event.target.style.display='none'"
+                    />
+                    <input
+                      v-model="menuItemSearch"
+                      @focus="menuPickerOpen = true"
+                      @input="menuPickerOpen = true"
+                      :disabled="availableMenuItems.length === 0"
+                      :placeholder="availableMenuItems.length === 0 ? 'No menu items available' : (selectedMenuItemLabel || 'Search menu items…')"
+                      autocomplete="off"
+                      class="flex-1 px-3 py-2 bg-transparent text-sm dark:text-white placeholder-gray-400 focus:outline-none disabled:cursor-not-allowed"
+                    />
+                    <button
+                      v-if="selectedMenuItem"
+                      type="button"
+                      @click.prevent="clearMenuPicker"
+                      class="px-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg leading-none"
+                      title="Clear selection"
+                    >×</button>
+                  </div>
+
+                  <!-- Dropdown -->
+                  <div
+                    v-if="menuPickerOpen && filteredMenuSections.length"
+                    class="absolute z-30 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-72 overflow-y-auto"
+                  >
+                    <div v-for="section in filteredMenuSections" :key="section.name">
+                      <div class="px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/60 sticky top-0">
+                        {{ section.name }}
+                      </div>
+                      <button
+                        v-for="item in section.items"
+                        :key="item.id"
+                        type="button"
+                        @mousedown.prevent="selectMenuPickerItem(item)"
+                        class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 dark:hover:bg-gray-700 flex items-center gap-3"
+                        :class="selectedMenuItem === item.id ? 'bg-blue-50 dark:bg-gray-700 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-800 dark:text-gray-100'"
+                      >
+                        <!-- Thumbnail -->
+                        <img
+                          v-if="item.image_url"
+                          :src="item.image_url"
+                          :alt="item.name"
+                          class="w-10 h-10 object-cover rounded shrink-0 bg-gray-100 dark:bg-gray-700"
+                          loading="lazy"
+                          @error="$event.target.style.display='none'"
+                        />
+                        <div v-else class="w-10 h-10 rounded shrink-0 bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 text-xs">🍽️</div>
+                        <span class="flex-1 min-w-0 truncate">{{ item.name }}</span>
+                        <span class="text-gray-500 dark:text-gray-400 shrink-0">{{ item.price }} EGP</span>
+                      </button>
+                    </div>
+                    <div v-if="menuItemSearch && !filteredMenuSections.length" class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                      No items match "{{ menuItemSearch }}"
+                    </div>
+                  </div>
+                </div>
+
                 <p v-if="availableMenuItems.length === 0" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   No menu items found for this order's menu. You can still add custom items below.
                 </p>
@@ -273,28 +332,43 @@
                       Your Item
                     </span>
                   </div>
-                  <p class="text-sm text-gray-600 dark:text-gray-400">{{ item.user_name }} - Qty: {{ item.quantity }} × {{ formatPrice(item.unit_price) }} EGP</p>
+                  <p class="text-sm text-gray-600 dark:text-gray-400">
+                    {{ item.user_name }} — {{ formatPrice(item.unit_price) }} EGP × {{ item.quantity }}
+                  </p>
                   <p v-if="item.note" class="text-sm text-gray-500 dark:text-gray-500 italic mt-1">
                     📝 Note: {{ item.note }}
                   </p>
                 </div>
-                <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-3">
                   <span class="font-semibold dark:text-white">{{ formatPrice(item.total_price) }} EGP</span>
-                  <button
+
+                  <!-- Inline quantity +/- for own items when order is OPEN -->
+                  <div
                     v-if="currentOrder?.status === 'OPEN' && item.user === authStore.user?.id"
-                    @click="removeItem(item.id)"
-                    class="bg-red-600 dark:bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-700 dark:hover:bg-red-600"
-                    title="Remove your item"
+                    class="flex items-center border border-gray-300 dark:border-gray-600 rounded overflow-hidden"
                   >
-                    Remove
-                  </button>
+                    <button
+                      type="button"
+                      @click="adjustQuantity(item, -1)"
+                      :disabled="updatingItem === item.id"
+                      class="px-2 py-1 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 font-bold"
+                    >−</button>
+                    <span class="px-2 text-sm font-medium dark:text-white min-w-[1.5rem] text-center">{{ item.quantity }}</span>
+                    <button
+                      type="button"
+                      @click="adjustQuantity(item, +1)"
+                      :disabled="updatingItem === item.id"
+                      class="px-2 py-1 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 font-bold"
+                    >+</button>
+                  </div>
+
                   <button
-                    v-if="currentOrder?.status === 'OPEN' && currentOrder.collector === authStore.user?.id && item.user !== authStore.user?.id"
+                    v-if="currentOrder?.status === 'OPEN' && (item.user === authStore.user?.id || currentOrder.collector === authStore.user?.id)"
                     @click="removeItem(item.id)"
                     class="bg-red-600 dark:bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-700 dark:hover:bg-red-600"
-                    title="Remove item (collector)"
+                    :title="item.user === authStore.user?.id ? 'Remove your item' : 'Remove item (collector)'"
                   >
-                    Remove
+                    ✕
                   </button>
                   <span v-if="currentOrder?.status !== 'OPEN'" class="text-xs text-gray-400 dark:text-gray-500">Locked</span>
                 </div>
@@ -595,12 +669,27 @@
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white"
               rows="4"
             ></textarea>
-            <button
-              @click="copyShareMessage"
-              class="mt-2 w-full bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600"
-            >
-              Copy Message
-            </button>
+            <div class="mt-2 flex gap-2">
+              <button
+                @click="copyShareMessage"
+                class="flex-1 bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600"
+              >
+                Copy Message
+              </button>
+              <a
+                v-if="currentOrder?.share_message"
+                :href="`https://wa.me/?text=${encodeURIComponent(currentOrder.share_message)}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center gap-1 bg-[#25D366] text-white px-4 py-2 rounded-md hover:bg-[#1da851] font-medium text-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                  <path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.555 4.122 1.527 5.855L0 24l6.335-1.502A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.907 0-3.686-.497-5.234-1.37l-.377-.222-3.76.892.953-3.648-.246-.386A9.952 9.952 0 012 12c0-5.514 4.486-10 10-10s10 4.486 10 10-4.486 10-10 10z"/>
+                </svg>
+                WhatsApp
+              </a>
+            </div>
             <!-- Join QR code -->
             <div v-if="currentOrder?.join_url" class="mt-4 flex flex-col items-center gap-2">
               <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Scan to join</p>
@@ -747,12 +836,22 @@
                 <span>{{ formatPrice(currentOrder?.total_cost) }} EGP</span>
               </div>
             </div>
-            <button
-              @click="copyReceipt"
-              class="mt-4 w-full bg-gray-600 dark:bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-700 dark:hover:bg-gray-600"
-            >
-              Copy Receipt to Share
-            </button>
+            <div class="mt-4 flex gap-2">
+              <button
+                @click="copyReceipt"
+                class="flex-1 bg-gray-600 dark:bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-700 dark:hover:bg-gray-600"
+              >
+                Copy Receipt to Share
+              </button>
+              <button
+                v-if="currentOrder?.collector === authStore.user?.id || authStore.isManager"
+                @click="exportCSV"
+                class="flex items-center gap-1 bg-emerald-600 dark:bg-emerald-500 text-white px-4 py-2 rounded-md hover:bg-emerald-700 dark:hover:bg-emerald-600 text-sm font-medium"
+                title="Download order summary as CSV"
+              >
+                ⬇ CSV
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -902,6 +1001,52 @@ const currentOrder = computed(() => {
 const availableMenuItems = computed(() => {
   return ordersStore.menuItems.filter(item => item.is_available)
 })
+
+// Searchable section-grouped menu picker state
+const menuItemSearch = ref('')
+const menuPickerOpen = ref(false)
+const menuPickerRef = ref(null)
+
+const selectedMenuItemObj = computed(() =>
+  selectedMenuItem.value ? availableMenuItems.value.find(i => i.id === selectedMenuItem.value) ?? null : null
+)
+
+const selectedMenuItemLabel = computed(() => {
+  const item = selectedMenuItemObj.value
+  return item ? `${item.name} — ${item.price} EGP` : ''
+})
+
+const filteredMenuSections = computed(() => {
+  const q = menuItemSearch.value.toLowerCase()
+  const items = availableMenuItems.value.filter(item =>
+    !q || item.name.toLowerCase().includes(q) || (item.section_name || '').toLowerCase().includes(q)
+  )
+  const sectionMap = {}
+  for (const item of items) {
+    const sec = item.section_name || 'Other'
+    if (!sectionMap[sec]) sectionMap[sec] = []
+    sectionMap[sec].push(item)
+  }
+  return Object.entries(sectionMap).map(([name, items]) => ({ name, items }))
+})
+
+function selectMenuPickerItem(item) {
+  selectedMenuItem.value = item.id
+  menuItemSearch.value = ''
+  menuPickerOpen.value = false
+}
+
+function clearMenuPicker() {
+  selectedMenuItem.value = ''
+  menuItemSearch.value = ''
+  menuPickerOpen.value = false
+}
+
+function handleMenuPickerOutsideClick(e) {
+  if (menuPickerRef.value && !menuPickerRef.value.contains(e.target)) {
+    menuPickerOpen.value = false
+  }
+}
 
 // Copy order code chip
 const codeCopied = ref(false)
@@ -1175,6 +1320,7 @@ onMounted(() => {
       isLoading = false
     })
   }
+  document.addEventListener('mousedown', handleMenuPickerOutsideClick)
 })
 
 // Watch for route changes (e.g., when code changes) - but only if not already loading
@@ -1206,6 +1352,7 @@ watch(() => currentOrder.value?.join_url, (newUrl) => {
 // Disconnect WebSocket when component unmounts
 onUnmounted(() => {
   wsStore.disconnect()
+  document.removeEventListener('mousedown', handleMenuPickerOutsideClick)
 })
 
 async function addMenuItem() {
@@ -1254,9 +1401,10 @@ async function addMenuItem() {
     
     if (result.success) {
       selectedMenuItem.value = ''
+      menuItemSearch.value = ''
       itemQuantity.value = 1
       itemNote.value = ''
-      selectedItemUser.value = null // Reset to default (current user)
+      selectedItemUser.value = null
       // Don't manually refetch - WebSocket will broadcast the update automatically
       // await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
       // Regenerate QR code if needed
@@ -1433,6 +1581,30 @@ function dismissUpdatePricePrompt() {
   showUpdatePricePrompt.value = false
   ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
   nextTick().then(() => generateInstapayQR())
+}
+
+const updatingItem = ref(null)
+
+async function adjustQuantity(item, delta) {
+  const newQty = item.quantity + delta
+  if (newQty < 1) {
+    if (!(await $confirm('Remove this item?'))) return
+    loading.value = true
+    await ordersStore.removeOrderItem(item.id)
+    loading.value = false
+    return
+  }
+  updatingItem.value = item.id
+  try {
+    await api.patch(`/order-items/${item.id}/`, { quantity: newQty })
+    // WebSocket will push the update; optimistically update local item
+    item.quantity = newQty
+    item.total_price = (parseFloat(item.unit_price) * newQty).toFixed(2)
+  } catch (error) {
+    toast.error('Failed to update quantity: ' + (error.response?.data?.detail || error.message))
+  } finally {
+    updatingItem.value = null
+  }
 }
 
 async function removeItem(itemId) {
@@ -1808,6 +1980,22 @@ ${order.instapay_link ? `Pay via Instapay: ${order.instapay_link}` : ''}`
       toast.error('Failed to copy receipt. Please select and copy manually.')
     }
     document.body.removeChild(textArea)
+  }
+}
+
+async function exportCSV() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) return
+  try {
+    const response = await api.get(`/orders/${order.id}/export_csv/`, { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `order-${order.code}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    toast.error('Failed to export CSV: ' + (error.response?.data?.error || error.message))
   }
 }
 </script>

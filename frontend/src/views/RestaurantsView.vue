@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="mb-8 flex justify-between items-center">
-      <h1 class="text-3xl font-bold text-gray-900">Restaurants</h1>
+      <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Restaurants</h1>
       <div class="flex space-x-2">
         <button
           @click="showTalabatModal = true"
@@ -9,57 +9,57 @@
         >
           Add from Talabat
         </button>
-      <button
-        @click="showCreateModal = true"
-        class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-      >
-        Add Restaurant
-      </button>
+        <button
+          @click="showCreateModal = true"
+          class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+        >
+          Add Restaurant
+        </button>
       </div>
     </div>
 
-    <div v-if="loading" class="text-center py-8">Loading...</div>
+    <div v-if="loading" class="text-center py-8 text-gray-600 dark:text-gray-400">Loading...</div>
     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <div
         v-for="restaurant in ordersStore.restaurants"
         :key="restaurant.id"
-        class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition border border-gray-100"
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition border border-gray-100 dark:border-gray-700"
       >
-        <h3 class="text-xl font-semibold mb-2 text-gray-800">{{ restaurant.name }}</h3>
-        <p class="text-gray-600 mb-4">{{ restaurant.description || 'No description' }}</p>
+        <h3 class="text-xl font-semibold mb-2 text-gray-800 dark:text-white">{{ restaurant.name }}</h3>
+        <p class="text-gray-600 dark:text-gray-400 mb-4">{{ restaurant.description || 'No description' }}</p>
         <div v-if="hasTalabatMenu(restaurant)" class="mb-3">
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">
             🍽️ Talabat Sync Enabled
           </span>
         </div>
         <div class="flex flex-col space-y-2">
-        <div class="flex space-x-2">
-          <router-link
-            :to="`/restaurants/${restaurant.id}/menus`"
-            class="flex-1 text-center bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-          >
-            Manage Menus
-          </router-link>
-          <button
-            @click="editRestaurant(restaurant)"
-            class="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-colors"
-          >
-            Edit
-          </button>
-          <button
-            @click="deleteRestaurant(restaurant.id)"
-            class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
-          >
-            Delete
-          </button>
-        </div>
+          <div class="flex space-x-2">
+            <router-link
+              :to="`/restaurants/${restaurant.id}/menus`"
+              class="flex-1 text-center bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            >
+              Manage Menus
+            </router-link>
+            <button
+              @click="editRestaurant(restaurant)"
+              class="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-colors"
+            >
+              Edit
+            </button>
+            <button
+              @click="deleteRestaurant(restaurant.id)"
+              class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
           <button
             v-if="hasTalabatMenu(restaurant)"
             @click="syncMenu(restaurant.id)"
             :disabled="syncingMenu === restaurant.id"
             class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
           >
-            {{ syncingMenu === restaurant.id ? 'Syncing...' : '🔄 Sync Menu from Talabat' }}
+            {{ syncingMenu === restaurant.id ? (syncMessage || 'Syncing…') : '🔄 Sync Menu from Talabat' }}
           </button>
         </div>
       </div>
@@ -71,19 +71,19 @@
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
       @click="closeTalabatModal"
     >
-      <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl" @click.stop>
-        <h2 class="text-xl font-semibold mb-4 text-gray-800">Add Restaurant from Talabat</h2>
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl" @click.stop>
+        <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Add Restaurant from Talabat</h2>
         <form @submit.prevent="saveTalabatRestaurant" class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Talabat URL</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Talabat URL</label>
             <input
               v-model="talabatUrl"
               type="url"
               placeholder="https://www.talabat.com/egypt/restaurant/..."
               required
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 dark:bg-gray-700 dark:text-white"
             />
-            <p class="mt-1 text-xs text-gray-500">
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Paste the full Talabat restaurant page URL
             </p>
           </div>
@@ -94,18 +94,18 @@
               id="syncNow"
               class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
             />
-            <label for="syncNow" class="ml-2 block text-sm text-gray-700">
+            <label for="syncNow" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
               Sync menu immediately
             </label>
           </div>
-          <div v-if="talabatError" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          <div v-if="talabatError" class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 px-4 py-3 rounded">
             {{ talabatError }}
           </div>
           <div class="flex space-x-2">
             <button
               type="button"
               @click="closeTalabatModal"
-              class="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+              class="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
             >
               Cancel
             </button>
@@ -127,33 +127,33 @@
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
       @click="closeModal"
     >
-      <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl" @click.stop>
-        <h2 class="text-xl font-semibold mb-4 text-gray-800">
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl" @click.stop>
+        <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
           {{ editingRestaurant ? 'Edit Restaurant' : 'Add Restaurant' }}
         </h2>
         <form @submit.prevent="saveRestaurant" class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Name</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
             <input
               v-model="newRestaurant.name"
               type="text"
               required
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Description</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
             <textarea
               v-model="newRestaurant.description"
               rows="3"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
             ></textarea>
           </div>
           <div class="flex space-x-2">
             <button
               type="button"
               @click="closeModal"
-              class="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+              class="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
             >
               Cancel
             </button>
@@ -186,10 +186,12 @@ const showTalabatModal = ref(false)
 const creating = ref(false)
 const addingTalabat = ref(false)
 const syncingMenu = ref(null)
+const syncMessage = ref('')
 const editingRestaurant = ref(null)
 const talabatUrl = ref('')
 const syncNow = ref(true)
 const talabatError = ref('')
+const talabatStatus = ref('')
 const newRestaurant = ref({
   name: '',
   description: '',
@@ -234,42 +236,81 @@ async function saveTalabatRestaurant() {
     talabatError.value = 'Please enter a Talabat URL'
     return
   }
-  
   if (!talabatUrl.value.startsWith('https://www.talabat.com/')) {
     talabatError.value = 'Invalid Talabat URL. Must start with https://www.talabat.com/'
     return
   }
-  
+
   addingTalabat.value = true
   talabatError.value = ''
-  
+  talabatStatus.value = ''
+
   const result = await ordersStore.addRestaurantFromTalabat(talabatUrl.value, syncNow.value)
-  
-  if (result.success) {
-    closeTalabatModal()
-    if (result.data.warning) {
-      toast.warning('Restaurant added but menu sync had issues: ' + result.data.warning)
-    } else {
-      toast.success(result.data.message || 'Restaurant added successfully!')
-    }
-  } else {
+
+  if (!result.success) {
     talabatError.value = result.error?.error || result.error?.detail || 'Failed to add restaurant from Talabat'
+    addingTalabat.value = false
+    return
   }
-  
+
+  closeTalabatModal()
+  toast.success(result.data.message || 'Restaurant added successfully!')
+  await ordersStore.fetchRestaurants()
+
+  const taskId = result.data.task_id
+  if (taskId) {
+    // Poll in background — restaurant is already shown, sync will update item count
+    const poll = await ordersStore.pollTaskStatus(taskId, {
+      onProgress: ({ message }) => { talabatStatus.value = message || 'Syncing…' },
+    })
+    if (poll.success) {
+      toast.success(`Menu populated: ${poll.result?.items_count ?? 0} items synced.`)
+      await ordersStore.fetchRestaurants()
+    } else {
+      toast.error('Menu sync failed: ' + (poll.error || 'Check server logs.'))
+    }
+    talabatStatus.value = ''
+  }
+
   addingTalabat.value = false
 }
 
 async function syncMenu(restaurantId) {
   syncingMenu.value = restaurantId
-  const result = await ordersStore.syncRestaurantMenu(restaurantId)
-  
-  if (result.success) {
-    toast.success(`Menu synced successfully! ${result.data.items_count || 0} items found.`)
-  } else {
-    toast.error('Failed to sync menu: ' + (result.error?.error || result.error?.detail || 'Unknown error'))
+  syncMessage.value = 'Starting sync…'
+
+  const dispatch = await ordersStore.syncRestaurantMenu(restaurantId)
+
+  if (!dispatch.success) {
+    toast.error('Failed to start sync: ' + (dispatch.error?.error || dispatch.error?.detail || 'Unknown error'))
+    syncingMenu.value = null
+    syncMessage.value = ''
+    return
   }
-  
+
+  const taskId = dispatch.taskId
+  if (!taskId) {
+    // No Celery available — legacy synchronous path
+    toast.success('Menu sync completed.')
+    await ordersStore.fetchRestaurants()
+    syncingMenu.value = null
+    syncMessage.value = ''
+    return
+  }
+
+  const poll = await ordersStore.pollTaskStatus(taskId, {
+    onProgress: ({ message }) => { syncMessage.value = message || 'Syncing…' },
+  })
+
+  if (poll.success) {
+    toast.success(`Menu synced! ${poll.result?.items_count ?? 0} items found.`)
+    await ordersStore.fetchRestaurants()
+  } else {
+    toast.error('Menu sync failed: ' + (poll.error || 'Unknown error'))
+  }
+
   syncingMenu.value = null
+  syncMessage.value = ''
 }
 
 async function saveRestaurant() {

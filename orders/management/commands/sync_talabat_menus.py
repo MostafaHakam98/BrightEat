@@ -93,9 +93,9 @@ class Command(BaseCommand):
         talabat_url_direct = options.get('talabat_url')
         
         try:
-            manager = User.objects.get(username=manager_username, role='manager')
+            manager = User.objects.get(username=manager_username, role__in=['manager', 'admin'])
         except User.DoesNotExist:
-            self.stdout.write(self.style.ERROR(f'Manager user not found: {manager_username}'))
+            self.stdout.write(self.style.ERROR(f'Manager/admin user not found: {manager_username}'))
             return
         
         # If talabat_url is provided directly, sync that menu
@@ -278,7 +278,8 @@ class Command(BaseCommand):
                 item_hash = talabat_item.item_hash
                 current_hashes.add(item_hash)
                 
-                # Build item data
+                # Build item data — prefer original_image (full-res) over image (thumb)
+                image_url = talabat_item.original_image or talabat_item.image or ''
                 item_data = {
                     'name': talabat_item.name,
                     'description': talabat_item.description,
@@ -287,6 +288,7 @@ class Command(BaseCommand):
                     'talabat_id': talabat_item.id,
                     'item_hash': item_hash,
                     'section_name': talabat_item.section_name,
+                    'image_url': image_url,
                 }
                 
                 # Try to find existing item by hash

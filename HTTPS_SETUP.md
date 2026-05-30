@@ -1,10 +1,10 @@
-# HTTPS Setup Guide for BrightEat
+# HTTPS Setup Guide for OrderQ
 
-This guide explains how to set up HTTPS for your BrightEat deployment on EC2.
+This guide explains how to set up HTTPS for your OrderQ deployment on EC2.
 
 ## Prerequisites
 
-1. An EC2 instance running BrightEat
+1. An EC2 instance running OrderQ
 2. A domain name pointing to your EC2 instance's public IP (optional - can use IP address)
 3. Ports 80 and 19991 open in your EC2 security group (HTTPS runs on port 19991)
 
@@ -17,7 +17,7 @@ Ensure your domain's A record points to your EC2 instance's public IP address.
 SSH into your EC2 instance and run:
 
 ```bash
-cd /home/ubuntu/BrightEat
+cd /home/ubuntu/OrderQ
 ./scripts/setup-ssl.sh your-domain.com your-email@example.com
 ```
 
@@ -50,7 +50,7 @@ docker compose -f docker-compose.prod.yml up -d
 If you don't have a domain name (e.g., using IP address like `51.20.151.57`):
 
 ```bash
-cd /home/ubuntu/BrightEat
+cd /home/ubuntu/OrderQ
 ./scripts/setup-ssl-self-signed.sh 51.20.151.57
 ```
 
@@ -90,7 +90,7 @@ The script automatically detects if you're using an IP address or domain name an
 ### Certificate Issues
 - Ensure port 80 is accessible for Let's Encrypt validation
 - Check that your domain DNS is properly configured
-- Verify certificates are in `/home/ubuntu/BrightEat/ssl/`
+- Verify certificates are in `/home/ubuntu/OrderQ/ssl/`
 
 ### Connection Issues
 - Check EC2 security group allows inbound traffic on ports 80 and 19991
@@ -108,7 +108,7 @@ Let's Encrypt certificates expire every 90 days. The setup script automatically 
 
 ```bash
 sudo certbot renew
-cd /home/ubuntu/BrightEat
+cd /home/ubuntu/OrderQ
 docker compose -f docker-compose.prod.yml restart nginx-router
 ```
 

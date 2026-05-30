@@ -7,14 +7,14 @@ set -e
 
 REMOTE_USER="ubuntu"
 REMOTE_HOST="51.20.151.57"
-REMOTE_PATH="/home/ubuntu/BrightEat"
+REMOTE_PATH="/home/ubuntu/OrderQ"
 SSH_KEY="$HOME/.ssh/ACAIPortal.pem"
 EXPORT_DIR="./docker-images"
 
 # Image names and tags
-BACKEND_IMAGE="brighteat-backend:latest"
-FRONTEND_IMAGE="brighteat-frontend:latest"
-FLUTTER_PWA_IMAGE="brighteat-flutter-pwa:latest"
+BACKEND_IMAGE="orderq-backend:latest"
+FRONTEND_IMAGE="orderq-frontend:latest"
+FLUTTER_PWA_IMAGE="orderq-flutter-pwa:latest"
 
 echo "🔨 Building Docker images locally..."
 

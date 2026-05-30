@@ -9,7 +9,7 @@ set -e
 if [ "$#" -lt 1 ]; then
     echo "Usage: $0 <domain-or-ip>"
     echo "Example: $0 51.20.151.57"
-    echo "Example: $0 brighteat.example.com"
+    echo "Example: $0 orderq.example.com"
     exit 1
 fi
 

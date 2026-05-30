@@ -6,7 +6,7 @@
 
 set -e
 
-REMOTE_PATH="/home/ubuntu/BrightEat"
+REMOTE_PATH="/home/ubuntu/OrderQ"
 IMAGES_DIR="$REMOTE_PATH/docker-images"
 
 echo "📥 Loading Docker images on remote server..."
