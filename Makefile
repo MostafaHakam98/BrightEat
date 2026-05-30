@@ -62,8 +62,8 @@ test: ## Run Django tests (local)
 
 # ── Production ────────────────────────────────────────────────────────────────
 prod-build: ## Build production Docker images (backend + frontend)
-	docker build -t brighteat-backend:latest -f Dockerfile .
-	docker build -t brighteat-frontend:latest -f frontend/Dockerfile frontend/
+	docker build -t orderq-backend:latest -f Dockerfile .
+	docker build -t orderq-frontend:latest -f frontend/Dockerfile frontend/
 
 prod-up: ## Start all production services (detached)
 	$(PROD_COMPOSE) up -d

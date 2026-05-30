@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to set up SSL certificates using Let's Encrypt for BrightEat
+# Script to set up SSL certificates using Let's Encrypt for OrderQ
 # This script should be run on the EC2 instance
 # Usage: ./scripts/setup-ssl.sh your-domain.com your-email@example.com
 
@@ -8,13 +8,13 @@ set -e
 
 if [ "$#" -lt 2 ]; then
     echo "Usage: $0 <domain-name> <email>"
-    echo "Example: $0 brighteat.example.com admin@example.com"
+    echo "Example: $0 orderq.example.com admin@example.com"
     exit 1
 fi
 
 DOMAIN=$1
 EMAIL=$2
-PROJECT_ROOT="/home/ubuntu/BrightEat"
+PROJECT_ROOT="/home/ubuntu/OrderQ"
 SSL_DIR="$PROJECT_ROOT/ssl"
 CERTBOT_DIR="$PROJECT_ROOT/certbot"
 

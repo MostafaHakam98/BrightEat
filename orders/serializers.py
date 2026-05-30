@@ -5,8 +5,8 @@ from django.conf import settings
 from django.utils import timezone as tz
 from datetime import timedelta
 from .models import (
-    User, Restaurant, Menu, MenuItem, CollectionOrder, 
-    OrderItem, Payment, AuditLog, FeePreset, Recommendation
+    User, Restaurant, Menu, MenuItem, CollectionOrder,
+    OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification
 )
 from .utils import format_item_name
 
@@ -164,10 +164,13 @@ class MenuSerializer(serializers.ModelSerializer):
 
 class MenuItemSerializer(serializers.ModelSerializer):
     menu_name = serializers.CharField(source='menu.name', read_only=True)
-    
+
     class Meta:
         model = MenuItem
-        fields = ['id', 'menu', 'menu_name', 'name', 'description', 'price', 'is_available', 'created_at']
+        fields = [
+            'id', 'menu', 'menu_name', 'name', 'description', 'price',
+            'is_available', 'section_name', 'image_url', 'created_at',
+        ]
         read_only_fields = ['id', 'created_at']
 
 
@@ -326,6 +329,12 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
     restaurant = serializers.PrimaryKeyRelatedField(queryset=Restaurant.objects.all(), required=True)
     menu = serializers.PrimaryKeyRelatedField(queryset=Menu.objects.all(), required=False, allow_null=True)
     cutoff_time = serializers.DateTimeField(required=False, allow_null=True, input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M:%S', 'iso-8601'])
+
+    def validate_cutoff_time(self, value):
+        if value and value <= tz.now():
+            raise serializers.ValidationError("Cutoff time must be in the future.")
+        return value
+
     # Explicitly define fee fields to ensure they're properly handled in updates
     delivery_fee = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=False)
     tip = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=False)
@@ -461,3 +470,12 @@ class RecommendationSerializer(serializers.ModelSerializer):
         model = Recommendation
         fields = ['id', 'user', 'user_name', 'category', 'category_display', 'title', 'text', 'created_at']
         read_only_fields = ['id', 'user', 'created_at']
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    order_code = serializers.CharField(source='order.code', read_only=True, default=None)
+
+    class Meta:
+        model = Notification
+        fields = ['id', 'order', 'order_code', 'notification_type', 'message', 'is_read', 'created_at']
+        read_only_fields = ['id', 'created_at']

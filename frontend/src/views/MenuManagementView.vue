@@ -3,20 +3,20 @@
     <div class="mb-6">
       <button
         @click="$router.push('/restaurants')"
-        class="text-blue-600 hover:text-blue-800 mb-4"
+        class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 mb-4"
       >
         ← Back to Restaurants
       </button>
-      <h1 class="text-3xl font-bold text-gray-900">{{ restaurant?.name || 'Menu Management' }}</h1>
-      <p class="text-gray-600 mt-2">{{ restaurant?.description || '' }}</p>
+      <h1 class="text-3xl font-bold text-gray-900 dark:text-white">{{ restaurant?.name || 'Menu Management' }}</h1>
+      <p class="text-gray-600 dark:text-gray-400 mt-2">{{ restaurant?.description || '' }}</p>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Menus List -->
       <div class="lg:col-span-1 space-y-4">
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-semibold">Menus</h2>
+            <h2 class="text-lg font-semibold dark:text-white">Menus</h2>
             <button
               @click="showCreateMenuModal = true"
               class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
@@ -31,21 +31,21 @@
               :class="[
                 'p-3 border rounded transition',
                 selectedMenu?.id === menu.id
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
               ]"
             >
               <div class="flex justify-between items-center mb-2">
-                <span 
+                <span
                   @click="selectMenu(menu)"
-                  class="font-medium cursor-pointer flex-1"
+                  class="font-medium cursor-pointer flex-1 dark:text-white"
                 >
                   {{ menu.name }}
                 </span>
                 <span
                   :class="[
                     'text-xs px-2 py-1 rounded',
-                    menu.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    menu.is_active ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
                   ]"
                 >
                   {{ menu.is_active ? 'Active' : 'Inactive' }}
@@ -72,60 +72,95 @@
 
       <!-- Menu Items -->
       <div class="lg:col-span-2">
-        <div v-if="!selectedMenu" class="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+        <div v-if="!selectedMenu" class="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center text-gray-500 dark:text-gray-400">
           Select a menu to manage items
         </div>
-        <div v-else class="bg-white rounded-lg shadow p-6">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-semibold">{{ selectedMenu.name }} Items</h2>
+        <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+            <h2 class="text-xl font-semibold dark:text-white">
+              {{ selectedMenu.name }} Items
+              <span class="text-sm font-normal text-gray-500 dark:text-gray-400 ml-1">({{ menuItems.length }})</span>
+            </h2>
             <button
               @click="showCreateItemModal = true"
-              class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+              class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 shrink-0"
             >
               + Add Item
             </button>
           </div>
 
-          <div v-if="loadingItems" class="text-center py-8">Loading...</div>
-          <div v-else-if="menuItems.length === 0" class="text-center py-8 text-gray-500">
+          <!-- Search bar -->
+          <div v-if="menuItems.length > 0" class="mb-4">
+            <input
+              v-model="itemSearch"
+              type="text"
+              placeholder="Search items…"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+            />
+          </div>
+
+          <div v-if="loadingItems" class="text-center py-8 text-gray-600 dark:text-gray-400">Loading...</div>
+          <div v-else-if="menuItems.length === 0" class="text-center py-8 text-gray-500 dark:text-gray-400">
             No items in this menu
           </div>
-          <div v-else class="space-y-3">
-            <div
-              v-for="item in menuItems"
-              :key="item.id"
-              class="flex justify-between items-start p-4 border border-gray-200 rounded-lg hover:shadow-md transition"
-            >
-              <div class="flex-1">
-                <h3 class="font-semibold text-lg">{{ item.name }}</h3>
-                <p class="text-gray-600 text-sm mt-1">{{ item.description || 'No description' }}</p>
-                <div class="flex items-center space-x-4 mt-2">
-                  <span class="font-bold text-blue-600">{{ item.price }} EGP</span>
-                  <span
-                    :class="[
-                      'text-xs px-2 py-1 rounded',
-                      item.is_available
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                    ]"
-                  >
-                    {{ item.is_available ? 'Available' : 'Unavailable' }}
-                  </span>
-                </div>
+          <div v-else-if="groupedMenuItems.length === 0" class="text-center py-6 text-gray-500 dark:text-gray-400 text-sm">
+            No items match "{{ itemSearch }}"
+          </div>
+          <div v-else class="space-y-6">
+            <div v-for="section in groupedMenuItems" :key="section.name">
+              <!-- Section header -->
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ section.name }}</span>
+                <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
+                <span class="text-xs text-gray-400 dark:text-gray-500">{{ section.items.length }}</span>
               </div>
-              <div class="flex space-x-2">
-                <button
-                  @click="editItem(item)"
-                  class="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
+              <div class="space-y-2">
+                <div
+                  v-for="item in section.items"
+                  :key="item.id"
+                  class="flex justify-between items-start p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:shadow-md transition"
                 >
-                  Edit
-                </button>
-                <button
-                  @click="deleteItem(item.id)"
-                  class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-                >
-                  Delete
-                </button>
+                  <!-- Thumbnail -->
+                  <img
+                    v-if="item.image_url"
+                    :src="item.image_url"
+                    :alt="item.name"
+                    class="w-14 h-14 object-cover rounded-lg shrink-0 mr-3 bg-gray-100 dark:bg-gray-700"
+                    loading="lazy"
+                    @error="$event.target.style.display='none'"
+                  />
+                  <div class="flex-1 min-w-0">
+                    <h3 class="font-semibold dark:text-white">{{ item.name }}</h3>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">{{ item.description || '' }}</p>
+                    <div class="flex items-center space-x-4 mt-2">
+                      <span class="font-bold text-blue-600 dark:text-blue-400">{{ item.price }} EGP</span>
+                      <span
+                        :class="[
+                          'text-xs px-2 py-1 rounded',
+                          item.is_available
+                            ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300'
+                            : 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300'
+                        ]"
+                      >
+                        {{ item.is_available ? 'Available' : 'Unavailable' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex space-x-2 ml-4">
+                    <button
+                      @click="editItem(item)"
+                      class="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      @click="deleteItem(item.id)"
+                      class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -139,18 +174,18 @@
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
       @click="closeMenuModal"
     >
-      <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl" @click.stop>
-        <h2 class="text-xl font-semibold mb-4 text-gray-800">
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl" @click.stop>
+        <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
           {{ editingMenu ? 'Edit Menu' : 'Add Menu' }}
         </h2>
         <form @submit.prevent="saveMenu" class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Menu Name</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Menu Name</label>
             <input
               v-model="newMenu.name"
               type="text"
               required
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 dark:bg-gray-700 dark:text-white"
             />
           </div>
           <div>
@@ -160,14 +195,14 @@
                 type="checkbox"
                 class="mr-2"
               />
-              <span class="text-sm text-gray-700">Active</span>
+              <span class="text-sm text-gray-700 dark:text-gray-300">Active</span>
             </label>
           </div>
           <div class="flex space-x-2">
             <button
               type="button"
               @click="closeMenuModal"
-              class="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+              class="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
             >
               Cancel
             </button>
@@ -189,37 +224,37 @@
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
       @click="closeItemModal"
     >
-      <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4" @click.stop>
-        <h2 class="text-xl font-semibold mb-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4" @click.stop>
+        <h2 class="text-xl font-semibold mb-4 dark:text-white">
           {{ editingItem ? 'Edit Item' : 'Add Menu Item' }}
         </h2>
         <form @submit.prevent="saveItem" class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Item Name</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Item Name</label>
             <input
               v-model="newItem.name"
               type="text"
               required
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Description</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
             <textarea
               v-model="newItem.description"
               rows="3"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
             ></textarea>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Price (EGP)</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Price (EGP)</label>
             <input
               v-model.number="newItem.price"
               type="number"
               step="0.01"
               min="0"
               required
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
             />
           </div>
           <div>
@@ -229,14 +264,14 @@
                 type="checkbox"
                 class="mr-2"
               />
-              <span class="text-sm text-gray-700">Available</span>
+              <span class="text-sm text-gray-700 dark:text-gray-300">Available</span>
             </label>
           </div>
           <div class="flex space-x-2">
             <button
               type="button"
               @click="closeItemModal"
-              class="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300"
+              class="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
             >
               Cancel
             </button>
@@ -281,6 +316,21 @@ const editingMenu = ref(null)
 const showCreateItemModal = ref(false)
 const editingItem = ref(null)
 const savingItem = ref(false)
+const itemSearch = ref('')
+
+const groupedMenuItems = computed(() => {
+  const q = itemSearch.value.toLowerCase()
+  const filtered = menuItems.value.filter(item =>
+    !q || item.name.toLowerCase().includes(q) || (item.section_name || '').toLowerCase().includes(q)
+  )
+  const sectionMap = {}
+  for (const item of filtered) {
+    const sec = item.section_name || 'Other'
+    if (!sectionMap[sec]) sectionMap[sec] = []
+    sectionMap[sec].push(item)
+  }
+  return Object.entries(sectionMap).map(([name, items]) => ({ name, items }))
+})
 
 const newMenu = ref({
   name: '',

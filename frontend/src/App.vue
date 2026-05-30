@@ -69,6 +69,54 @@
               </svg>
             </button>
 
+            <!-- Bell / notifications -->
+            <div class="relative" ref="bellRef">
+              <button
+                @click="toggleBell"
+                class="relative p-2 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label="Notifications"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                </svg>
+                <span
+                  v-if="notifStore.unreadCount > 0"
+                  class="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none"
+                >{{ notifStore.unreadCount > 99 ? '99+' : notifStore.unreadCount }}</span>
+              </button>
+
+              <!-- Dropdown panel -->
+              <transition name="bell-drop">
+                <div
+                  v-if="bellOpen"
+                  class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden"
+                >
+                  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">Notifications</span>
+                    <button
+                      v-if="notifStore.unreadCount > 0"
+                      @click="notifStore.markAllRead()"
+                      class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >Mark all read</button>
+                  </div>
+                  <ul class="max-h-72 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+                    <li v-if="notifStore.notifications.length === 0" class="px-4 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
+                      No notifications yet
+                    </li>
+                    <li
+                      v-for="n in notifStore.notifications"
+                      :key="n.id"
+                      @click="handleNotifClick(n)"
+                      :class="['px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors', n.is_read ? '' : 'bg-indigo-50 dark:bg-indigo-900/20']"
+                    >
+                      <p class="text-sm text-gray-800 dark:text-gray-100 leading-snug">{{ n.message }}</p>
+                      <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ formatNotifTime(n.created_at) }}</p>
+                    </li>
+                  </ul>
+                </div>
+              </transition>
+            </div>
+
             <!-- Avatar -->
             <span
               class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 dark:bg-indigo-500 text-white text-sm font-semibold select-none cursor-default"
@@ -187,8 +235,10 @@
 
 <script setup>
 import { ref, watch, onMounted, onUnmounted, defineComponent, h, resolveComponent } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { useThemeStore } from './stores/theme'
+import { useNotificationsStore } from './stores/notifications'
 import { RouterLink } from 'vue-router'
 import ToastContainer from './components/ToastContainer.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
@@ -196,11 +246,46 @@ import api from './api'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
+const notifStore = useNotificationsStore()
+const router = useRouter()
 const sidebarOpen = ref(false)
+
+// Bell
+const bellOpen = ref(false)
+const bellRef = ref(null)
+
+function toggleBell() {
+  bellOpen.value = !bellOpen.value
+  if (bellOpen.value) notifStore.fetchNotifications()
+}
+
+function handleNotifClick(n) {
+  if (!n.is_read) notifStore.markRead(n.id)
+  if (n.order) {
+    bellOpen.value = false
+    router.push(`/orders/${n.order}`)
+  }
+}
+
+function formatNotifTime(ts) {
+  const d = new Date(ts)
+  const diff = (Date.now() - d.getTime()) / 1000
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return d.toLocaleDateString()
+}
+
+function handleBellOutsideClick(e) {
+  if (bellRef.value && !bellRef.value.contains(e.target)) bellOpen.value = false
+}
+
+// Unread count poll every 60 s
+let notifPollTimer = null
 
 // Close sidebar on Escape
 function handleKey(e) {
-  if (e.key === 'Escape') sidebarOpen.value = false
+  if (e.key === 'Escape') { sidebarOpen.value = false; bellOpen.value = false }
 }
 
 // Scroll shadow
@@ -209,10 +294,17 @@ function handleScroll() { scrolled.value = window.scrollY > 4 }
 onMounted(() => {
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKey)
+  document.addEventListener('mousedown', handleBellOutsideClick)
+  if (authStore.isAuthenticated) {
+    notifStore.fetchUnreadCount()
+    notifPollTimer = setInterval(() => notifStore.fetchUnreadCount(), 60_000)
+  }
 })
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   window.removeEventListener('keydown', handleKey)
+  document.removeEventListener('mousedown', handleBellOutsideClick)
+  if (notifPollTimer) clearInterval(notifPollTimer)
 })
 
 async function refreshTabTitle() {
@@ -227,8 +319,14 @@ async function refreshTabTitle() {
 }
 onMounted(refreshTabTitle)
 watch(() => authStore.isAuthenticated, (auth) => {
-  if (auth) refreshTabTitle()
-  else document.title = 'OrderQ'
+  if (auth) {
+    refreshTabTitle()
+    notifStore.fetchUnreadCount()
+    notifPollTimer = setInterval(() => notifStore.fetchUnreadCount(), 60_000)
+  } else {
+    document.title = 'OrderQ'
+    if (notifPollTimer) { clearInterval(notifPollTimer); notifPollTimer = null }
+  }
 })
 
 // ── SidebarLink helper component ───────────────────────────────
@@ -301,5 +399,16 @@ const SidebarLink = defineComponent({
 .sidebar-panel-enter-from,
 .sidebar-panel-leave-to {
   transform: translateX(-100%);
+}
+
+/* ── Bell dropdown ───────────────────────────────────────── */
+.bell-drop-enter-active,
+.bell-drop-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.bell-drop-enter-from,
+.bell-drop-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
 }
 </style>

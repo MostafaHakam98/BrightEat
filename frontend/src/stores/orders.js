@@ -177,13 +177,28 @@ export const useOrdersStore = defineStore('orders', () => {
 
   async function syncRestaurantMenu(restaurantId) {
     try {
+      // Returns 202 Accepted with task_id — sync is now async
       const response = await api.post(`/restaurants/${restaurantId}/sync_menu/`)
-      // Refresh restaurants to get updated menu info
-      await fetchRestaurants()
-      return { success: true, data: response.data }
+      return { success: true, data: response.data, taskId: response.data.task_id }
     } catch (error) {
       return { success: false, error: error.response?.data }
     }
+  }
+
+  async function pollTaskStatus(taskId, { onProgress, intervalMs = 2000, maxAttempts = 90 } = {}) {
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, intervalMs))
+      try {
+        const response = await api.get(`/task-status/${taskId}/`)
+        const { state, result, error, message } = response.data
+        if (onProgress) onProgress({ state, message })
+        if (state === 'SUCCESS') return { success: true, result }
+        if (state === 'FAILURE') return { success: false, error }
+      } catch (err) {
+        return { success: false, error: err.message }
+      }
+    }
+    return { success: false, error: 'Sync timed out after 3 minutes.' }
   }
 
   async function updateRestaurant(restaurantId, restaurantData) {
@@ -329,6 +344,7 @@ export const useOrdersStore = defineStore('orders', () => {
     fetchOrderByCode,
     addRestaurantFromTalabat,
     syncRestaurantMenu,
+    pollTaskStatus,
     createOrder,
     fetchUsers,
     lockOrder,

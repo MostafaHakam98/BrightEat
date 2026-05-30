@@ -6,6 +6,7 @@ from .views import (
     MenuItemViewSet, CollectionOrderViewSet, OrderItemViewSet,
     PaymentViewSet, AuditLogViewSet, FeePresetViewSet, RecommendationViewSet,
     MicrosoftSSOStatusView, MicrosoftLoginView, MicrosoftCallbackView, HiveSSOView,
+    TaskStatusView, NotificationViewSet,
 )
 
 router = DefaultRouter()
@@ -19,6 +20,7 @@ router.register(r'payments', PaymentViewSet, basename='payment')
 router.register(r'audit-logs', AuditLogViewSet, basename='auditlog')
 router.register(r'fee-presets', FeePresetViewSet, basename='feepreset')
 router.register(r'recommendations', RecommendationViewSet, basename='recommendation')
+router.register(r'notifications', NotificationViewSet, basename='notification')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -29,5 +31,6 @@ urlpatterns = [
     path('auth/microsoft/login/', MicrosoftLoginView.as_view(), name='ms-login'),
     path('auth/microsoft/callback/', MicrosoftCallbackView.as_view(), name='ms-callback'),
     path('auth/hive-sso/', HiveSSOView.as_view(), name='hive-sso'),
+    path('task-status/<str:task_id>/', TaskStatusView.as_view(), name='task-status'),
 ]
 

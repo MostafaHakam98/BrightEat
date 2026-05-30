@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.core.validators import MinValueValidator
 from django.utils import timezone
 import secrets
 import string
@@ -68,6 +69,7 @@ class MenuItem(models.Model):
     talabat_id = models.BigIntegerField(null=True, blank=True, help_text="Original Talabat item ID")
     item_hash = models.CharField(max_length=64, blank=True, null=True, db_index=True, help_text="SHA256 hash for change detection")
     section_name = models.CharField(max_length=200, blank=True, help_text="Section/category name from Talabat")
+    image_url = models.URLField(max_length=1000, blank=True, help_text="Item image URL from Talabat CDN")
     
     class Meta:
         ordering = ['name']
@@ -81,12 +83,19 @@ class MenuItem(models.Model):
 
 class FeePreset(models.Model):
     """Fee preset for quick setup"""
+    FEE_SPLIT_CHOICES = [
+        ('equal', 'Equal'),
+        ('proportional', 'Proportional'),
+        ('collector_pays', 'Collector Pays'),
+    ]
+
     name = models.CharField(max_length=100)  # e.g., "Talabat"
     delivery_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     tip = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     service_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    fee_split_rule = models.CharField(max_length=20, choices=FEE_SPLIT_CHOICES, default='equal')
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     def __str__(self):
         return self.name
 
@@ -98,6 +107,7 @@ class CollectionOrder(models.Model):
         ('LOCKED', 'Locked'),
         ('ORDERED', 'Ordered'),
         ('CLOSED', 'Closed'),
+        ('DELETED', 'Deleted'),
     ]
     
     FEE_SPLIT_CHOICES = [
@@ -187,8 +197,7 @@ class OrderItem(models.Model):
         return f"{self.user.username} - {item_name} x{self.quantity}"
     
     def save(self, *args, **kwargs):
-        if not self.total_price:
-            self.total_price = self.unit_price * self.quantity
+        self.total_price = self.unit_price * self.quantity
         super().save(*args, **kwargs)
 
 
@@ -196,7 +205,7 @@ class Payment(models.Model):
     """Payment tracking model"""
     order = models.ForeignKey(CollectionOrder, on_delete=models.CASCADE, related_name='payments')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments')
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     is_paid = models.BooleanField(default=False)
     paid_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -214,12 +223,15 @@ class AuditLog(models.Model):
     ACTION_CHOICES = [
         ('created', 'Created'),
         ('locked', 'Locked'),
+        ('unlocked', 'Unlocked'),
         ('ordered', 'Ordered'),
         ('closed', 'Closed'),
+        ('deleted', 'Deleted'),
         ('item_added', 'Item Added'),
         ('item_removed', 'Item Removed'),
         ('fee_updated', 'Fee Updated'),
         ('user_joined', 'User Joined'),
+        ('items_auto_created', 'Items Auto-Created'),
     ]
     
     order = models.ForeignKey(CollectionOrder, on_delete=models.CASCADE, related_name='audit_logs')
@@ -244,15 +256,42 @@ class Recommendation(models.Model):
         ('ui', 'UI/UX'),
         ('other', 'Other'),
     ]
-    
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recommendations')
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='other', help_text="Type of recommendation")
     title = models.CharField(max_length=200, help_text="Brief title for the recommendation")
     text = models.TextField(help_text="Detailed recommendation or feedback")
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.user.username} - {self.title} ({self.get_category_display()}) - {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class Notification(models.Model):
+    """In-app notification for a user"""
+    TYPE_CHOICES = [
+        ('order_status', 'Order Status Change'),
+        ('payment_due', 'Payment Due'),
+        ('payment_received', 'Payment Received'),
+        ('order_joined', 'Someone Joined Order'),
+        ('system', 'System'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    order = models.ForeignKey(
+        'CollectionOrder', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='notifications'
+    )
+    notification_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='system')
+    message = models.TextField()
+    is_read = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} — {self.message[:60]}"

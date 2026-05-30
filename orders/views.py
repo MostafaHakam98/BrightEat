@@ -3,24 +3,61 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
+from rest_framework.throttling import AnonRateThrottle
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
-from django.db import transaction, IntegrityError
+from django.db import transaction, IntegrityError, connection
+from django.http import HttpResponse, JsonResponse
 from decimal import Decimal
 from datetime import timedelta
+import csv
+import io
+import logging
 from .models import (
-    User, Restaurant, Menu, MenuItem, CollectionOrder, 
-    OrderItem, Payment, AuditLog, FeePreset, Recommendation
+    User, Restaurant, Menu, MenuItem, CollectionOrder,
+    OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification
 )
 from .serializers import (
     UserSerializer, UserRegistrationSerializer, LoginSerializer, ChangePasswordSerializer,
     RestaurantSerializer, MenuSerializer, MenuItemSerializer, CollectionOrderSerializer,
     OrderItemSerializer, PaymentSerializer, AuditLogSerializer, FeePresetSerializer,
-    RecommendationSerializer
+    RecommendationSerializer, NotificationSerializer
 )
 from .utils import format_item_name
 from .websocket_utils import broadcast_order_update, broadcast_new_order
 from rest_framework_simplejwt.tokens import RefreshToken
+
+logger = logging.getLogger(__name__)
+
+
+def _notify_order_participants(order, message, notification_type='order_status', exclude_user=None):
+    """Create an in-app Notification for every participant of an order."""
+    participants = order.get_participants()
+    notifications = []
+    for user in participants:
+        if exclude_user and user == exclude_user:
+            continue
+        notifications.append(Notification(
+            user=user,
+            order=order,
+            notification_type=notification_type,
+            message=message,
+        ))
+    if notifications:
+        Notification.objects.bulk_create(notifications)
+
+
+class HealthCheckView(APIView):
+    """Simple health check: verifies the app is up and DB is reachable."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        try:
+            connection.ensure_connection()
+            return JsonResponse({'status': 'ok', 'database': 'ok'})
+        except Exception as exc:
+            logger.error('Health check DB failure: %s', exc)
+            return JsonResponse({'status': 'error', 'database': str(exc)}, status=503)
 
 
 class IsManagerOrReadOnly(permissions.BasePermission):
@@ -49,37 +86,26 @@ class UserViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         """Override update to check permissions for role changes"""
         instance = self.get_object()
-        
-        # Check if role is being changed
-        if 'role' in request.data:
-            # Only admins can change roles
-            if request.user.role != 'admin':
-                return Response(
-                    {'error': 'Only administrators can change user roles'}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            # Prevent admins from removing their own admin role
-            if instance.id == request.user.id and request.data.get('role') != 'admin':
-                return Response(
-                    {'error': 'You cannot remove your own administrator role'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        # Regular users can only update their own profile (except role)
+
+        # Regular users can only update their own profile
         if request.user.role not in ['admin', 'manager'] and instance.id != request.user.id:
             return Response(
-                {'error': 'You can only update your own profile'}, 
+                {'error': 'You can only update your own profile'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
-        # Only admins can change roles
-        if request.user.role != 'admin' and 'role' in request.data:
-            return Response(
-                {'error': 'You cannot change user roles. Only administrators can change roles.'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
+
+        if 'role' in request.data:
+            if request.user.role != 'admin':
+                return Response(
+                    {'error': 'Only administrators can change user roles'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if instance.id == request.user.id and request.data.get('role') != 'admin':
+                return Response(
+                    {'error': 'You cannot remove your own administrator role'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         return super().update(request, *args, **kwargs)
     
     def partial_update(self, request, *args, **kwargs):
@@ -119,9 +145,14 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({'message': f'Password set for {user.username}'})
 
 
+class LoginRateThrottle(AnonRateThrottle):
+    scope = 'login'
+
+
 class LoginView(APIView):
     """Custom login view that accepts username or email"""
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [LoginRateThrottle]
     
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -169,186 +200,128 @@ class RestaurantViewSet(viewsets.ModelViewSet):
         """
         Add a restaurant from Talabat URL.
         Accepts: { "talabat_url": "...", "sync_now": true/false }
+        Returns 201 immediately; if sync_now=true, enqueues an async Celery task
+        and returns task_id so the frontend can poll for status.
         """
         if request.user.role not in ['manager', 'admin']:
             return Response(
-                {'error': 'Only managers or administrators can add restaurants from Talabat'}, 
+                {'error': 'Only managers or administrators can add restaurants from Talabat'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         talabat_url = request.data.get('talabat_url')
         sync_now = request.data.get('sync_now', False)
-        
+
         if not talabat_url:
-            return Response(
-                {'error': 'talabat_url is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Validate URL format
+            return Response({'error': 'talabat_url is required'}, status=status.HTTP_400_BAD_REQUEST)
+
         if not talabat_url.startswith('https://www.talabat.com/'):
             return Response(
-                {'error': 'Invalid Talabat URL. Must start with https://www.talabat.com/'}, 
+                {'error': 'Invalid Talabat URL. Must start with https://www.talabat.com/'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Parse URL to extract restaurant name
+
+        # Derive restaurant name from URL slug
         import sys
-        from django.conf import settings
-        
-        # Use Django's BASE_DIR for reliable path resolution
-        scripts_dir = settings.BASE_DIR / 'scripts'
+        from django.conf import settings as django_settings
+        scripts_dir = django_settings.BASE_DIR / 'scripts'
         if scripts_dir.exists() and str(scripts_dir) not in sys.path:
             sys.path.insert(0, str(scripts_dir))
-        
         try:
             from talabat_scrap import parse_url_parts
             url_info = parse_url_parts(talabat_url)
-            branch_slug = url_info.get('branch_slug', 'restaurant')
-            # Use branch_slug as restaurant name (capitalize it)
-            restaurant_name = branch_slug.replace('-', ' ').title()
-        except Exception as e:
-            # Fallback to generic name
+            restaurant_name = url_info.get('branch_slug', 'restaurant').replace('-', ' ').title()
+        except Exception:
             restaurant_name = 'Talabat Restaurant'
-        
-        # Check if restaurant with this URL already exists
+
+        # Prevent duplicates
         existing_menu = Menu.objects.filter(talabat_url=talabat_url).first()
         if existing_menu:
             return Response(
                 {
                     'error': 'Restaurant with this Talabat URL already exists',
                     'restaurant': RestaurantSerializer(existing_menu.restaurant).data,
-                    'menu': MenuSerializer(existing_menu).data
-                }, 
+                    'menu': MenuSerializer(existing_menu).data,
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Create restaurant and menu
+
         try:
             with transaction.atomic():
                 restaurant = Restaurant.objects.create(
                     name=restaurant_name,
-                    description=f'Auto-added from Talabat',
-                    created_by=request.user
+                    description='Auto-added from Talabat',
+                    created_by=request.user,
                 )
-                
                 menu = Menu.objects.create(
                     restaurant=restaurant,
                     name='Main Menu',
                     is_active=True,
-                    talabat_url=talabat_url
+                    talabat_url=talabat_url,
                 )
-                
-                # If sync_now is True, trigger immediate sync
-                if sync_now:
-                    try:
-                        # Import sync function
-                        from django.core.management import call_command
-                        from io import StringIO
-                        import sys
-                        
-                        # Capture output
-                        old_stdout = sys.stdout
-                        sys.stdout = StringIO()
-                        
-                        try:
-                            call_command(
-                                'sync_talabat_menus',
-                                talabat_url=talabat_url,
-                                manager=request.user.username,
-                                verbosity=1  # Use verbosity=1 to see debug output
-                            )
-                        finally:
-                            output = sys.stdout.getvalue()
-                            sys.stdout = old_stdout
-                        
-                        # Refresh menu to get updated data
-                        menu.refresh_from_db()
-                        
-                    except Exception as sync_error:
-                        # If sync fails, still return the restaurant/menu but with a warning
-                        return Response(
-                            {
-                                'restaurant': RestaurantSerializer(restaurant).data,
-                                'menu': MenuSerializer(menu).data,
-                                'warning': f'Restaurant created but menu sync failed: {str(sync_error)}',
-                                'sync_error': str(sync_error)
-                            },
-                            status=status.HTTP_201_CREATED
-                        )
-                
-                return Response(
-                    {
-                        'restaurant': RestaurantSerializer(restaurant).data,
-                        'menu': MenuSerializer(menu).data,
-                        'message': 'Restaurant added successfully' + (' and menu synced' if sync_now else '. Use sync endpoint to sync menu.')
-                    },
-                    status=status.HTTP_201_CREATED
+
+            task_id = None
+            if sync_now:
+                from .tasks import sync_talabat_menus_task
+                task = sync_talabat_menus_task.delay(
+                    talabat_url=talabat_url,
+                    manager_username=request.user.username,
                 )
-                
+                task_id = task.id
+
+            response_data = {
+                'restaurant': RestaurantSerializer(restaurant).data,
+                'menu': MenuSerializer(menu).data,
+                'message': 'Restaurant added successfully.' + (
+                    ' Menu sync started in the background.' if sync_now else
+                    ' Use the sync endpoint to populate the menu.'
+                ),
+            }
+            if task_id:
+                response_data['task_id'] = task_id
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
         except Exception as e:
             return Response(
-                {'error': f'Failed to create restaurant: {str(e)}'}, 
+                {'error': f'Failed to create restaurant: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
+
     @action(detail=True, methods=['post'])
     def sync_menu(self, request, pk=None):
         """
-        Sync menu for a restaurant from Talabat.
+        Enqueue an async Celery task to sync the menu for this restaurant from Talabat.
+        Returns 202 Accepted with a task_id; poll GET /api/task-status/{task_id}/ for progress.
         """
         if request.user.role not in ['manager', 'admin']:
             return Response(
-                {'error': 'Only managers or administrators can sync menus'}, 
+                {'error': 'Only managers or administrators can sync menus'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         restaurant = self.get_object()
-        menu = restaurant.menus.filter(talabat_url__isnull=False).first()
-        
-        if not menu or not menu.talabat_url:
+        menu = restaurant.menus.filter(talabat_url__isnull=False).exclude(talabat_url='').first()
+
+        if not menu:
             return Response(
-                {'error': 'No Talabat URL found for this restaurant'}, 
+                {'error': 'No Talabat URL found for this restaurant'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        try:
-            from django.core.management import call_command
-            from io import StringIO
-            import sys
-            
-            # Capture output
-            old_stdout = sys.stdout
-            sys.stdout = StringIO()
-            
-            try:
-                call_command(
-                    'sync_talabat_menus',
-                    restaurant=restaurant.name,
-                    manager=request.user.username,
-                    verbosity=0
-                )
-            finally:
-                output = sys.stdout.getvalue()
-                sys.stdout = old_stdout
-            
-            # Refresh menu to get updated data
-            menu.refresh_from_db()
-            
-            return Response(
-                {
-                    'menu': MenuSerializer(menu).data,
-                    'message': 'Menu synced successfully',
-                    'items_count': menu.items.count()
-                },
-                status=status.HTTP_200_OK
-            )
-            
-        except Exception as e:
-            return Response(
-                {'error': f'Failed to sync menu: {str(e)}'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+
+        from .tasks import sync_talabat_menus_task
+        task = sync_talabat_menus_task.delay(
+            talabat_url=menu.talabat_url,
+            manager_username=request.user.username,
+        )
+
+        return Response(
+            {
+                'task_id': task.id,
+                'message': 'Menu sync started. Poll /api/task-status/{task_id}/ for progress.',
+            },
+            status=status.HTTP_202_ACCEPTED
+        )
 
 
 class MenuViewSet(viewsets.ModelViewSet):
@@ -396,21 +369,25 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         status_filter = self.request.query_params.get('status')
-        queryset = CollectionOrder.objects.all()
-        
+        queryset = CollectionOrder.objects.exclude(status='DELETED').select_related(
+            'restaurant', 'menu', 'collector'
+        ).prefetch_related(
+            'items__user', 'items__menu_item',
+            'payments__user',
+            'assigned_users',
+        )
+
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
-        # Show public orders to everyone, private orders only to participants/managers/admins
-        # Also show orders where user is assigned
+
         if user.role not in ['manager', 'admin']:
             queryset = queryset.filter(
-                Q(is_private=False) |  # Public orders
-                Q(collector=user) |    # Orders I collected
-                Q(items__user=user) |  # Orders I'm participating in
-                Q(assigned_users=user) # Orders I'm assigned to
+                Q(is_private=False) |
+                Q(collector=user) |
+                Q(items__user=user) |
+                Q(assigned_users=user)
             ).distinct()
-        
+
         return queryset
     
     def get_serializer_context(self):
@@ -533,28 +510,28 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
     
     def destroy(self, request, *args, **kwargs):
         order = self.get_object()
-        # Only collector, manager, or admin can delete
         if order.collector != request.user and request.user.role not in ['manager', 'admin']:
             return Response(
-                {'error': 'Only collector, manager, or administrator can delete order'}, 
+                {'error': 'Only collector, manager, or administrator can delete order'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
-        # Collectors can only delete OPEN orders, managers/admins can delete any order
+
         if order.status != 'OPEN' and request.user.role not in ['manager', 'admin']:
             return Response(
-                {'error': 'Can only delete open orders'}, 
+                {'error': 'Can only delete open orders'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         AuditLog.objects.create(
             order=order,
             user=request.user,
             action='deleted',
             details={'restaurant': order.restaurant.name, 'code': order.code, 'status': order.status}
         )
-        
-        return super().destroy(request, *args, **kwargs)
+
+        order.status = 'DELETED'
+        order.save(update_fields=['status'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=['post'])
     def lock(self, request, pk=None):
@@ -581,20 +558,16 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
         order.status = 'LOCKED'
         order.locked_at = timezone.now()
         order.save()
-        
-        # Calculate payments based on fee split rule
+
         self._calculate_payments(order)
-        
-        AuditLog.objects.create(
-            order=order,
-            user=request.user,
-            action='locked',
-            details={}
+
+        AuditLog.objects.create(order=order, user=request.user, action='locked', details={})
+        _notify_order_participants(
+            order,
+            f'Order {order.code} at {order.restaurant.name} has been locked.',
+            exclude_user=request.user,
         )
-        
-        # Broadcast order update via WebSocket
         broadcast_order_update(order)
-        
         return Response(CollectionOrderSerializer(order).data)
     
     @action(detail=True, methods=['post'])
@@ -650,17 +623,14 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
         order.status = 'ORDERED'
         order.ordered_at = timezone.now()
         order.save()
-        
-        AuditLog.objects.create(
-            order=order,
-            user=request.user,
-            action='ordered',
-            details={}
+
+        AuditLog.objects.create(order=order, user=request.user, action='ordered', details={})
+        _notify_order_participants(
+            order,
+            f'Order {order.code} at {order.restaurant.name} has been placed!',
+            exclude_user=request.user,
         )
-        
-        # Broadcast order update via WebSocket
         broadcast_order_update(order)
-        
         return Response(CollectionOrderSerializer(order).data)
     
     @action(detail=True, methods=['post'])
@@ -681,17 +651,14 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
         order.status = 'CLOSED'
         order.closed_at = timezone.now()
         order.save()
-        
-        AuditLog.objects.create(
-            order=order,
-            user=request.user,
-            action='closed',
-            details={}
+
+        AuditLog.objects.create(order=order, user=request.user, action='closed', details={})
+        _notify_order_participants(
+            order,
+            f'Order {order.code} at {order.restaurant.name} is now closed.',
+            exclude_user=request.user,
         )
-        
-        # Broadcast order update via WebSocket
         broadcast_order_update(order)
-        
         return Response(CollectionOrderSerializer(order).data)
     
     @action(detail=False, methods=['get'])
@@ -790,15 +757,21 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
             # Skip collector's payment if they are the collector (should be auto-paid)
             if payment.user == payment.order.collector:
                 continue
+            collector = payment.order.collector
+            qr_url = None
+            if collector.instapay_qr_code:
+                qr_url = request.build_absolute_uri(collector.instapay_qr_code.url)
             result.append({
                 'order_id': payment.order.id,
                 'order_code': payment.order.code,
                 'restaurant_name': payment.order.restaurant.name,
-                'collector_name': payment.order.collector.username,
+                'collector_name': collector.username,
                 'amount': float(payment.amount),
                 'payment_id': payment.id,
                 'order_status': payment.order.status,
-                'payment_type': 'owed_by_me',  # User owes this payment
+                'payment_type': 'owed_by_me',
+                'collector_instapay_link': collector.instapay_link or '',
+                'collector_instapay_qr_code_url': qr_url,
             })
         
         return Response(result)
@@ -878,38 +851,41 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
         ).distinct()
         total_orders_participated = orders_participated.count()
         
-        # Average order value (for orders user participated in)
-        avg_order_value = 0
-        if total_orders_participated > 0:
-            total_order_values = sum(order.get_total_cost() for order in orders_participated)
-            avg_order_value = total_order_values / total_orders_participated
-        
-        # Total fees paid (delivery + tip + service)
+        # Average order value — aggregate in DB, no Python loops
+        from django.db.models import F
+        order_totals = orders_participated.annotate(
+            items_total=Sum('items__total_price'),
+        ).aggregate(
+            grand_total=Sum(F('items_total') + F('delivery_fee') + F('tip') + F('service_fee'))
+        )
+        avg_order_value = (
+            float(order_totals['grand_total'] or 0) / total_orders_participated
+            if total_orders_participated > 0 else 0
+        )
+
+        # Fees paid = total payments minus user's own item costs (single queries)
         total_fees_paid = Payment.objects.filter(
             user=user,
             order__created_at__gte=start_of_month
         ).aggregate(total=Sum('amount'))['total'] or 0
-        # Subtract item costs to get fees only
-        total_item_costs = sum(
-            item.total_price 
-            for order in orders_participated 
-            for item in order.items.filter(user=user)
+        total_item_costs = OrderItem.objects.filter(
+            order__in=orders_participated, user=user
+        ).aggregate(total=Sum('total_price'))['total'] or 0
+        total_fees_only = float(total_fees_paid) - float(total_item_costs)
+
+        # Payment completion rate — single aggregated query
+        payment_stats = Payment.objects.filter(
+            user=user,
+            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
+            order__created_at__gte=start_of_month
+        ).aggregate(
+            total=Count('id'),
+            paid=Count('id', filter=Q(is_paid=True)),
         )
-        total_fees_only = total_fees_paid - total_item_costs
-        
-        # Payment completion rate
-        total_payments = Payment.objects.filter(
-            user=user,
-            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
-            order__created_at__gte=start_of_month
-        ).count()
-        paid_payments = Payment.objects.filter(
-            user=user,
-            is_paid=True,
-            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
-            order__created_at__gte=start_of_month
-        ).count()
-        payment_completion_rate = (paid_payments / total_payments * 100) if total_payments > 0 else 100
+        total_payments = payment_stats['total']
+        payment_completion_rate = (
+            payment_stats['paid'] / total_payments * 100 if total_payments > 0 else 100
+        )
         
         # Most ordered restaurant
         restaurant_counts = CollectionOrder.objects.filter(
@@ -953,6 +929,45 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
             'total_pending': float(total_pending),
             'total_owed_to_user': float(total_owed_to_user),
         })
+
+    @action(detail=True, methods=['get'])
+    def export_csv(self, request, pk=None):
+        """Export order summary as CSV (collector or admin/manager only)"""
+        order = self.get_object()
+        if request.user != order.collector and request.user.role not in ['admin', 'manager']:
+            return Response({'error': 'Only the collector or an admin can export this order.'}, status=status.HTTP_403_FORBIDDEN)
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+
+        writer.writerow(['Order Code', 'Restaurant', 'Status', 'Collector', 'Created At'])
+        writer.writerow([order.code, order.restaurant.name, order.status, order.collector.username, order.created_at.strftime('%Y-%m-%d %H:%M')])
+        writer.writerow([])
+
+        writer.writerow(['--- Items ---'])
+        writer.writerow(['User', 'Item', 'Quantity', 'Unit Price', 'Total Price', 'Note'])
+        for item in order.items.select_related('user', 'menu_item').all():
+            name = item.menu_item.name if item.menu_item else item.custom_name
+            writer.writerow([item.user.username, name, item.quantity, item.unit_price, item.total_price, item.note])
+        writer.writerow([])
+
+        writer.writerow(['--- Fees ---'])
+        writer.writerow(['Delivery Fee', 'Tip', 'Service Fee', 'Fee Split Rule'])
+        writer.writerow([order.delivery_fee, order.tip, order.service_fee, order.fee_split_rule])
+        writer.writerow([])
+
+        writer.writerow(['--- Payments ---'])
+        writer.writerow(['User', 'Amount', 'Paid', 'Paid At'])
+        for payment in order.payments.select_related('user').all():
+            writer.writerow([payment.user.username, payment.amount, 'Yes' if payment.is_paid else 'No', payment.paid_at.strftime('%Y-%m-%d %H:%M') if payment.paid_at else ''])
+        writer.writerow([])
+
+        writer.writerow(['Total Items Cost', order.get_total_items_cost()])
+        writer.writerow(['Total Cost', order.get_total_cost()])
+
+        response = HttpResponse(buf.getvalue(), content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="order-{order.code}.csv"'
+        return response
 
     @action(detail=False, methods=['get'])
     def report(self, request):
@@ -1019,32 +1034,37 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
         ).distinct()
         total_orders_participated = orders_participated.count()
 
-        # Average order value
-        avg_order_value = 0
-        if total_orders_participated > 0:
-            total_order_values = sum(o.get_total_cost() for o in orders_participated)
-            avg_order_value = total_order_values / total_orders_participated
-
-        # Fees paid = total spend minus item costs
-        total_item_costs = sum(
-            item.total_price
-            for order in orders_participated
-            for item in order.items.filter(user=user)
+        # Average order value — aggregate fees+items in one pass using annotate
+        from django.db.models import F
+        order_totals = orders_participated.annotate(
+            items_total=Sum('items__total_price'),
+        ).aggregate(
+            grand_total=Sum(F('items_total') + F('delivery_fee') + F('tip') + F('service_fee'))
         )
-        total_fees_only = float(total_spend) - total_item_costs
+        avg_order_value = (
+            float(order_totals['grand_total'] or 0) / total_orders_participated
+            if total_orders_participated > 0 else 0
+        )
+
+        # User's own item costs in one query
+        total_item_costs = OrderItem.objects.filter(
+            order__in=orders_participated, user=user
+        ).aggregate(total=Sum('total_price'))['total'] or 0
+        total_fees_only = float(total_spend) - float(total_item_costs)
 
         # Payment completion rate
-        total_payments = Payment.objects.filter(
+        payment_stats = Payment.objects.filter(
             user=user,
             order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
             **order_date_q
-        ).count()
-        paid_payments = Payment.objects.filter(
-            user=user, is_paid=True,
-            order__status__in=['LOCKED', 'ORDERED', 'CLOSED'],
-            **order_date_q
-        ).count()
-        payment_completion_rate = (paid_payments / total_payments * 100) if total_payments > 0 else 100
+        ).aggregate(
+            total=Count('id'),
+            paid=Count('id', filter=Q(is_paid=True)),
+        )
+        total_payments = payment_stats['total']
+        payment_completion_rate = (
+            payment_stats['paid'] / total_payments * 100 if total_payments > 0 else 100
+        )
 
         # Most ordered restaurant
         restaurant_counts = CollectionOrder.objects.filter(
@@ -1531,15 +1551,25 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditLog.objects.all()
     serializer_class = AuditLogSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
+        user = self.request.user
         order_id = self.request.query_params.get('order')
-        queryset = AuditLog.objects.all()
-        
+
+        # Admins/managers can see all logs; regular users only see logs for orders
+        # they collected or participated in.
+        if user.role in ['admin', 'manager']:
+            queryset = AuditLog.objects.all()
+        else:
+            authorized_order_ids = CollectionOrder.objects.filter(
+                Q(collector=user) | Q(items__user=user)
+            ).values_list('id', flat=True).distinct()
+            queryset = AuditLog.objects.filter(order_id__in=authorized_order_ids)
+
         if order_id:
             queryset = queryset.filter(order_id=order_id)
-        
-        return queryset
+
+        return queryset.select_related('user', 'order')
 
 
 class FeePresetViewSet(viewsets.ModelViewSet):
@@ -1622,3 +1652,58 @@ class HiveSSOView(APIView):
             return Response({'error': 'Account is inactive'}, status=status.HTTP_403_FORBIDDEN)
         refresh = RefreshToken.for_user(user)
         return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})
+
+
+class TaskStatusView(APIView):
+    """
+    Poll the status of a Celery task by its task ID.
+    GET /api/task-status/<task_id>/
+    Returns: { state, result, error }
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, task_id):
+        from celery.result import AsyncResult
+        result = AsyncResult(task_id)
+        state = result.state
+
+        if state == 'PENDING':
+            data = {'state': 'PENDING', 'message': 'Task is queued or unknown.'}
+        elif state == 'STARTED':
+            meta = result.info or {}
+            data = {'state': 'STARTED', 'message': meta.get('message', 'Running…')}
+        elif state == 'SUCCESS':
+            data = {'state': 'SUCCESS', 'result': result.result}
+        elif state == 'FAILURE':
+            data = {'state': 'FAILURE', 'error': str(result.result)}
+        else:
+            data = {'state': state, 'message': str(result.info)}
+
+        return Response(data)
+
+
+class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+    """In-app notifications for the authenticated user."""
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user)
+
+    @action(detail=True, methods=['post'], url_path='mark_read')
+    def mark_read(self, request, pk=None):
+        notif = self.get_object()
+        notif.is_read = True
+        notif.save(update_fields=['is_read'])
+        return Response({'status': 'ok'})
+
+    @action(detail=False, methods=['post'], url_path='mark_all_read')
+    def mark_all_read(self, request):
+        Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+        return Response({'status': 'ok'})
+
+    @action(detail=False, methods=['get'], url_path='unread_count')
+    def unread_count(self, request):
+        count = Notification.objects.filter(user=request.user, is_read=False).count()
+        return Response({'unread_count': count})
