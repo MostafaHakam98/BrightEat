@@ -1,5 +1,8 @@
 <template>
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div
+    class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+    :class="currentOrder && canManage ? 'pb-28 md:pb-8' : ''"
+  >
     <div v-if="loading" class="text-center py-8">
       <p class="text-lg text-gray-900 dark:text-white">Loading order...</p>
       <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">Code: {{ route.params.code }}</p>
@@ -65,26 +68,15 @@
             <p v-if="currentOrder?.is_private" class="text-xs text-gray-500 dark:text-gray-400 mt-1">🔒 Private Order</p>
           </div>
           <div class="text-right">
-            <div class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold" :class="{
-              'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300': currentOrder?.status === 'OPEN',
-              'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300': currentOrder?.status === 'LOCKED',
-              'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300': currentOrder?.status === 'ORDERED',
-              'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300': currentOrder?.status === 'CLOSED',
-            }">
-              <span v-if="currentOrder?.status === 'OPEN'">✅</span>
-              <span v-else-if="currentOrder?.status === 'LOCKED'">🔒</span>
-              <span v-else-if="currentOrder?.status === 'ORDERED'">📦</span>
-              <span v-else-if="currentOrder?.status === 'CLOSED'">✓</span>
+            <BaseBadge :color="currentOrder?.status || 'gray'">
               {{ currentOrder?.status || 'UNKNOWN' }}
-            </div>
-            <p v-if="currentOrder?.status && currentOrder.status !== 'OPEN'" class="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              {{ currentOrder.status === 'LOCKED' ? 'Order is locked. No items can be added or removed.' : '' }}
-              {{ currentOrder.status === 'ORDERED' ? 'Order has been placed.' : '' }}
-              {{ currentOrder.status === 'CLOSED' ? 'Order is closed.' : '' }}
-            </p>
+            </BaseBadge>
           </div>
         </div>
       </div>
+
+      <!-- Order progress stepper -->
+      <OrderStepper v-if="currentOrder" :order="currentOrder" class="mb-6" />
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" v-if="currentOrder">
         <div class="lg:col-span-2 space-y-6">
@@ -97,20 +89,6 @@
             </p>
           </div>
           
-          <!-- Status Message for Locked/Ordered/Closed -->
-          <div v-if="currentOrder?.status !== 'OPEN'" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div class="text-center py-4">
-              <p class="text-lg font-semibold mb-2 dark:text-white">
-                Order is {{ currentOrder.status }}
-              </p>
-              <p class="text-gray-600 dark:text-gray-400 text-sm">
-                {{ currentOrder.status === 'LOCKED' ? 'The collector has locked this order. Items cannot be added or removed.' : '' }}
-                {{ currentOrder.status === 'ORDERED' ? 'This order has been placed with the restaurant.' : '' }}
-                {{ currentOrder.status === 'CLOSED' ? 'This order is closed.' : '' }}
-              </p>
-            </div>
-          </div>
-
           <!-- Who hasn't ordered yet (collector view, locked/ordered) -->
           <div
             v-if="usersWithoutItems.length > 0"
@@ -129,12 +107,23 @@
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Add Items to Order</h2>
             <div class="space-y-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Menu Item
-                  <span v-if="currentOrder?.menu_name" class="text-xs text-gray-500 dark:text-gray-400 font-normal">
-                    ({{ currentOrder.menu_name }})
-                  </span>
-                </label>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Menu Item
+                    <span v-if="currentOrder?.menu_name" class="text-xs text-gray-500 dark:text-gray-400 font-normal">
+                      ({{ currentOrder.menu_name }})
+                    </span>
+                  </label>
+                  <BaseButton
+                    size="sm"
+                    variant="secondary"
+                    :loading="addingUsual"
+                    title="Re-add the items from your last order at this restaurant"
+                    @click="addMyUsual"
+                  >
+                    ⚡ Add my usual
+                  </BaseButton>
+                </div>
 
                 <!-- Searchable section-grouped picker -->
                 <div class="relative" ref="menuPickerRef">
@@ -211,16 +200,16 @@
                 </p>
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Assign to User
-                  <span class="text-xs text-gray-500 font-normal">
+                  <span class="text-xs text-gray-500 dark:text-gray-400 font-normal">
                     ({{ selectedItemUser ? 'Assigned to ' + (allUsers.find(u => u.id === selectedItemUser)?.username || 'selected user') : 'You (default)' }})
                   </span>
                 </label>
                 <select
                   v-model="selectedItemUser"
                   :disabled="currentOrder?.collector !== authStore.user?.id && !authStore.isManager"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
                   @focus="ensureUsersLoaded"
                 >
                   <option :value="null">Me ({{ authStore.user?.username }})</option>
@@ -228,7 +217,7 @@
                     {{ user.username }}
                   </option>
                 </select>
-                <p class="mt-1 text-xs text-gray-500">
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   <span v-if="currentOrder?.collector === authStore.user?.id || authStore.isManager">
                     You can assign items to other users
                   </span>
@@ -302,7 +291,7 @@
                       Optional: Add special instructions or modifications for this item
                     </p>
                   </div>
-                  <p class="text-xs text-gray-500">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
                     Custom item will be assigned to: {{ selectedItemUser ? (allUsers.find(u => u.id === selectedItemUser)?.username || 'selected user') : authStore.user?.username }}
                   </p>
                 </div>
@@ -406,15 +395,33 @@
             </div>
           </div>
 
-          <!-- Actions (Collector and Manager) -->
-          <div v-if="currentOrder?.collector === authStore.user?.id || authStore.isManager" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
-            <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Actions & Fees</h2>
-            <p v-if="currentOrder?.collector === authStore.user?.id" class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              <strong>How it works:</strong> You (the collector) pay the restaurant for everyone's items plus fees. 
+          <!-- Role-aware actions (collector / manager) — one action area, no duplicates -->
+          <OrderActionBar
+            :order="currentOrder"
+            :can-manage="canManage"
+            :is-collector="isCollector"
+            :can-delete="canDelete"
+            :busy="loading"
+            @lock="handleLockRequest"
+            @unlock="unlockOrder"
+            @mark-ordered="markOrdered"
+            @close="closeOrder"
+            @delete="deleteOrder"
+            @transfer="handleTransferRequest"
+          />
+
+          <!-- Who's in -->
+          <OrderRoster :order="currentOrder" />
+
+          <!-- Fees & settings (collector only, while OPEN) -->
+          <div v-if="currentOrder?.status === 'OPEN' && isCollector" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Fees & Settings</h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              <strong>How it works:</strong> You (the collector) pay the restaurant for everyone's items plus fees.
               Then each person pays you back their share. Use the fee split rules below to calculate how much each person owes.
             </p>
             <div class="space-y-2">
-              <div v-if="currentOrder?.status === 'OPEN' && currentOrder?.collector === authStore.user?.id">
+              <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Fees</label>
                 <input
                   v-model.number="fees.delivery_fee"
@@ -444,12 +451,14 @@
                   <option value="equal">Equal Split - Fees divided equally</option>
                   <option value="proportional">Proportional - Based on item cost</option>
                   <option value="collector_pays">Collector Pays - You pay all fees</option>
+                  <option value="custom">Custom - Set exact amounts when locking</option>
                 </select>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-2">
                   <strong>Fee Split Rules:</strong><br>
                   • <strong>Equal:</strong> Fees split equally among everyone<br>
                   • <strong>Proportional:</strong> Fees split based on each person's item cost<br>
-                  • <strong>Collector Pays:</strong> You pay all fees, others only pay for their items
+                  • <strong>Collector Pays:</strong> You pay all fees, others only pay for their items<br>
+                  • <strong>Custom:</strong> You set each person's exact amount when locking
                 </p>
                 <input
                   v-model="fees.instapay_link"
@@ -457,37 +466,11 @@
                   placeholder="Instapay Link"
                   class="w-full mb-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
                 />
-                <button
-                  @click="updateFees"
-                  class="w-full bg-yellow-600 dark:bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-700 dark:hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-colors"
-                >
+                <BaseButton block variant="secondary" @click="updateFees">
                   Update Fees
-                </button>
-              <button
-                v-if="currentOrder?.status === 'OPEN' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
-                @click="lockOrder"
-                class="w-full mt-2 bg-amber-500 dark:bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-600 dark:hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors"
-              >
-                🔒 Lock Order
-              </button>
-              <!-- Collector Delete Button (only for OPEN orders, and not manager) -->
-              <button
-                v-if="!authStore.isManager && currentOrder?.status === 'OPEN' && currentOrder?.collector === authStore.user?.id"
-                @click="deleteOrder"
-                class="w-full mt-2 bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
-              >
-                🗑️ Delete Order
-              </button>
-              <!-- Manager Delete Button in main section (when manager is also collector) -->
-              <button
-                v-if="authStore.isManager && currentOrder?.collector === authStore.user?.id"
-                @click="deleteOrder"
-                class="w-full mt-2 bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
-              >
-                🗑️ Delete Order (Manager)
-              </button>
+                </BaseButton>
               <!-- Assign Users Section (Compact) -->
-              <div v-if="currentOrder?.status === 'OPEN'" class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   @click="toggleAssignUsers"
                   class="w-full flex items-center justify-between text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white py-2"
@@ -573,90 +556,7 @@
                   </button>
                 </div>
               </div>
-              
-              <div v-if="currentOrder?.status === 'OPEN' && currentOrder?.collector === authStore.user?.id && currentOrder?.participants?.length > 1" class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Transfer Collector Role</label>
-                <select
-                  v-model="transferCollectorId"
-                  class="w-full mb-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-white"
-                >
-                  <option value="">Select new collector</option>
-                  <option
-                    v-for="participant in currentOrder.participants"
-                    :key="participant.id"
-                    :value="participant.id"
-                    :disabled="participant.id === currentOrder.collector"
-                  >
-                    {{ participant.username }} {{ participant.id === currentOrder.collector ? '(Current)' : '' }}
-                  </option>
-                </select>
-                <button
-                  @click="transferCollector"
-                  :disabled="!transferCollectorId"
-                  class="w-full bg-purple-600 dark:bg-purple-500 text-white px-4 py-2 rounded-md hover:bg-purple-700 dark:hover:bg-purple-600 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-                >
-                  Transfer Collector Role
-                </button>
               </div>
-              </div>
-              <!-- Unlock button for LOCKED orders (visible to collector and manager) -->
-              <button
-                v-if="currentOrder?.status === 'LOCKED' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
-                @click="unlockOrder"
-                class="w-full mt-2 bg-orange-500 dark:bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-600 dark:hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
-              >
-                🔓 Unlock Order
-              </button>
-              <!-- Mark as Ordered button (collector only) -->
-              <button
-                v-if="currentOrder?.status === 'LOCKED' && currentOrder?.collector === authStore.user?.id"
-                @click="markOrdered"
-                class="w-full bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-              >
-                ✅ Mark as Ordered
-              </button>
-              <!-- Close Order button (collector and manager) -->
-              <button
-                v-if="currentOrder?.status === 'ORDERED' && (currentOrder?.collector === authStore.user?.id || authStore.isManager)"
-                @click="closeOrder"
-                class="w-full bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
-              >
-                🔚 Close Order
-              </button>
-            </div>
-          </div>
-
-          <!-- Manager-only actions section (always visible for managers) -->
-          <div v-if="authStore.isManager" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
-            <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Manager Actions</h2>
-            <div class="space-y-2">
-              <button
-                v-if="currentOrder?.status === 'OPEN'"
-                @click="lockOrder"
-                class="w-full bg-amber-500 dark:bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-600 dark:hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors"
-              >
-                🔒 Lock Order
-              </button>
-              <button
-                v-if="currentOrder?.status === 'LOCKED'"
-                @click="unlockOrder"
-                class="w-full bg-orange-500 dark:bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-600 dark:hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-colors"
-              >
-                🔓 Unlock Order
-              </button>
-              <button
-                v-if="currentOrder?.status === 'ORDERED'"
-                @click="closeOrder"
-                class="w-full bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
-              >
-                🔚 Close Order
-              </button>
-              <button
-                @click="deleteOrder"
-                class="w-full bg-red-600 dark:bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
-              >
-                🗑️ Delete Order
-              </button>
             </div>
           </div>
 
@@ -707,6 +607,14 @@
               </p>
             </div>
             <div v-else class="space-y-3">
+              <!-- Shared hidden input for payment proof uploads -->
+              <input
+                ref="proofFileInput"
+                type="file"
+                accept="image/*"
+                class="hidden"
+                @change="onProofFileSelected"
+              />
               <div
                 v-for="payment in currentOrder.payments.filter(p => {
                   // Show all payments, but hide collector's payment only if it's paid and there are other payments
@@ -718,36 +626,100 @@
                 })"
                 :key="payment.id"
                 :class="[
-                  'flex items-center p-3 border rounded',
+                  'p-3 border rounded',
                   payment.is_paid ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-700' : 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-700'
                 ]"
               >
-                <div class="flex-1 min-w-0">
-                  <p class="font-medium dark:text-white">{{ payment.user_name }}</p>
-                  <p class="text-sm text-gray-600 dark:text-gray-400">
-                    {{ payment.is_paid ? '✅ Paid' : '⏳ Pending' }}
-                    <span v-if="payment.paid_at" class="ml-2 text-xs">
-                      ({{ new Date(payment.paid_at).toLocaleString() }})
-                    </span>
-                  </p>
-                </div>
-                <div class="text-right mx-4 flex-shrink-0">
-                  <p class="font-semibold text-lg dark:text-white whitespace-nowrap">{{ formatPrice(payment.amount) }} EGP</p>
-                  <button
-                    v-if="!payment.is_paid && currentOrder?.instapay_link && payment.user === authStore.user?.id"
-                    @click="openInstapay"
-                    class="mt-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline"
+                <div class="flex items-center">
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium dark:text-white">{{ payment.user_name }}</p>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                      {{ payment.is_paid ? '✅ Paid' : '⏳ Pending' }}
+                      <span v-if="payment.paid_at" class="ml-2 text-xs">
+                        ({{ new Date(payment.paid_at).toLocaleString() }})
+                      </span>
+                    </p>
+                  </div>
+                  <div class="text-right mx-4 flex-shrink-0">
+                    <p class="font-semibold text-lg dark:text-white whitespace-nowrap">{{ formatPrice(payment.amount) }} EGP</p>
+                    <button
+                      v-if="!payment.is_paid && currentOrder?.instapay_link && payment.user === authStore.user?.id"
+                      @click="openInstapay"
+                      class="mt-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline"
+                    >
+                      Pay via Instapay
+                    </button>
+                  </div>
+                  <BaseButton
+                    v-if="!payment.is_paid && payment.user !== currentOrder?.collector && (currentOrder?.collector === authStore.user?.id || payment.user === authStore.user?.id)"
+                    size="sm"
+                    variant="success"
+                    class="flex-shrink-0"
+                    @click="markPaymentPaid(payment.id)"
                   >
-                    Pay via Instapay
-                  </button>
+                    {{ payment.user === authStore.user?.id ? 'Mark as Paid' : 'Mark Paid' }}
+                  </BaseButton>
                 </div>
-                <button
-                  v-if="!payment.is_paid && payment.user !== currentOrder?.collector && (currentOrder?.collector === authStore.user?.id || payment.user === authStore.user?.id)"
-                  @click="markPaymentPaid(payment.id)"
-                  class="bg-green-600 dark:bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-700 dark:hover:bg-green-600 flex-shrink-0"
+
+                <!-- Proof status chip -->
+                <div v-if="payment.proof_status === 'claimed' || payment.proof_status === 'rejected'" class="mt-2">
+                  <BaseBadge :color="payment.proof_status === 'claimed' ? 'yellow' : 'red'">
+                    {{ payment.proof_status === 'claimed' ? 'Proof uploaded — awaiting confirmation' : 'Proof rejected — re-upload' }}
+                  </BaseBadge>
+                </div>
+
+                <!-- My payment: upload proof -->
+                <div
+                  v-if="payment.user === authStore.user?.id && !payment.is_paid && payment.proof_status !== 'claimed'"
+                  class="mt-2"
                 >
-                  {{ payment.user === authStore.user?.id ? 'Mark as Paid' : 'Mark Paid' }}
-                </button>
+                  <BaseButton
+                    size="sm"
+                    variant="secondary"
+                    :loading="uploadingProofFor === payment.id"
+                    @click="triggerProofUpload(payment.id)"
+                  >
+                    📎 {{ payment.proof_status === 'rejected' ? 'Re-upload payment proof' : 'Upload payment proof' }}
+                  </BaseButton>
+                </div>
+
+                <!-- Collector / manager: review claimed proof -->
+                <div
+                  v-if="canManage && payment.proof_status === 'claimed'"
+                  class="mt-2 flex items-center gap-2"
+                >
+                  <a
+                    v-if="payment.proof_image_url"
+                    :href="payment.proof_image_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open payment proof in a new tab"
+                    class="shrink-0"
+                  >
+                    <img
+                      :src="payment.proof_image_url"
+                      alt="Payment proof"
+                      class="w-10 h-10 rounded object-cover border border-gray-300 dark:border-gray-600"
+                      @error="$event.target.style.display='none'"
+                    />
+                  </a>
+                  <BaseButton
+                    size="sm"
+                    variant="success"
+                    :loading="reviewingProofFor === payment.id"
+                    @click="confirmProof(payment.id)"
+                  >
+                    Confirm
+                  </BaseButton>
+                  <BaseButton
+                    size="sm"
+                    variant="danger"
+                    :disabled="reviewingProofFor === payment.id"
+                    @click="rejectProof(payment.id)"
+                  >
+                    Reject
+                  </BaseButton>
+                </div>
               </div>
             </div>
             <div v-if="currentOrder?.instapay_link && currentOrder.collector === authStore.user?.id" class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/30 rounded">
@@ -924,6 +896,14 @@
         </div>
       </div>
     </div>
+
+    <!-- Custom fee split: collect per-participant amounts before locking -->
+    <CustomSplitModal
+      :open="showCustomSplitModal"
+      :order="currentOrder"
+      @close="showCustomSplitModal = false"
+      @locked="onCustomSplitLocked"
+    />
   </div>
 </template>
 
@@ -937,6 +917,12 @@ import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
 import QRCode from 'qrcode'
+import BaseButton from '../components/ui/BaseButton.vue'
+import BaseBadge from '../components/ui/BaseBadge.vue'
+import OrderStepper from '../components/order/OrderStepper.vue'
+import OrderActionBar from '../components/order/OrderActionBar.vue'
+import OrderRoster from '../components/order/OrderRoster.vue'
+import CustomSplitModal from '../components/order/CustomSplitModal.vue'
 
 const toast = useToast()
 const { confirm: $confirm } = useConfirm()
@@ -989,6 +975,24 @@ const order = computed(() => ordersStore.currentOrder)
 const currentOrder = computed(() => {
   return order.value || ordersStore.currentOrder
 })
+
+// Role helpers for the single action area
+const isCollector = computed(() => currentOrder.value?.collector === authStore.user?.id)
+const canManage = computed(() => isCollector.value || authStore.isManager)
+// Collectors can delete only OPEN orders; managers can delete any order
+const canDelete = computed(() => authStore.isManager || (isCollector.value && currentOrder.value?.status === 'OPEN'))
+
+// Custom fee split (lock interception)
+const showCustomSplitModal = ref(false)
+
+// Payment proof upload / review state
+const proofFileInput = ref(null)
+const proofUploadPaymentId = ref(null)
+const uploadingProofFor = ref(null)
+const reviewingProofFor = ref(null)
+
+// "Add my usual" state
+const addingUsual = ref(false)
 
 const availableMenuItems = computed(() => {
   return ordersStore.menuItems.filter(item => item.is_available)
@@ -1399,6 +1403,56 @@ async function addMenuItem() {
   }
 }
 
+// One-tap re-add of the user's items from their last order at this restaurant
+async function addMyUsual() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    toast.error('Order not loaded')
+    return
+  }
+  if (order.status !== 'OPEN') {
+    toast.warning('This order is locked and cannot be modified')
+    return
+  }
+
+  addingUsual.value = true
+  try {
+    const result = await ordersStore.fetchMyUsual(order.restaurant)
+    if (!result.success) {
+      const errorMsg = result.error?.detail || result.error?.error || 'Unknown error'
+      toast.error('Failed to fetch your usual: ' + errorMsg)
+      return
+    }
+
+    const usualItems = result.data?.items || []
+    if (!usualItems.length) {
+      toast.info('No previous order here yet')
+      return
+    }
+
+    let added = 0
+    for (const usual of usualItems) {
+      const itemData = {
+        order: order.id,
+        menu_item: usual.menu_item,
+        quantity: usual.quantity,
+        unit_price: usual.unit_price,
+      }
+      if (usual.note) itemData.note = usual.note
+      const res = await ordersStore.addOrderItem(itemData)
+      if (res.success) added++
+    }
+
+    if (added > 0) {
+      toast.success(`Added ${added} item${added === 1 ? '' : 's'} from your last order`)
+    } else {
+      toast.error('Could not add items from your last order')
+    }
+  } finally {
+    addingUsual.value = false
+  }
+}
+
 async function addCustomItem() {
   if (!customItemName.value || !customItemPrice.value) {
     toast.warning('Please enter item name and price')
@@ -1633,6 +1687,31 @@ async function updateFees() {
   loading.value = false
 }
 
+// Entry point for the action bar's Lock: intercept custom fee split with a modal
+function handleLockRequest() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    toast.error('Order not loaded')
+    return
+  }
+  if (order.fee_split_rule === 'custom') {
+    showCustomSplitModal.value = true
+    return
+  }
+  lockOrder()
+}
+
+async function onCustomSplitLocked() {
+  showCustomSplitModal.value = false
+  await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+  toast.success('Order locked successfully')
+}
+
+function handleTransferRequest(newCollectorId) {
+  transferCollectorId.value = newCollectorId
+  transferCollector()
+}
+
 async function lockOrder() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
@@ -1777,6 +1856,60 @@ async function markPaymentPaid(paymentId) {
     toast.error('Failed to mark payment as paid')
   }
   loading.value = false
+}
+
+// --- Payment proof upload (participant) and review (collector/manager) ---
+function triggerProofUpload(paymentId) {
+  proofUploadPaymentId.value = paymentId
+  proofFileInput.value?.click()
+}
+
+async function onProofFileSelected(event) {
+  const file = event.target.files?.[0]
+  event.target.value = '' // allow re-selecting the same file later
+  const paymentId = proofUploadPaymentId.value
+  proofUploadPaymentId.value = null
+  if (!file || !paymentId) return
+
+  uploadingProofFor.value = paymentId
+  const result = await ordersStore.uploadPaymentProof(paymentId, file)
+  uploadingProofFor.value = null
+
+  if (result.success) {
+    // WebSocket broadcast refreshes the order with the new proof_status
+    toast.success('Payment proof uploaded — waiting for the collector to confirm')
+  } else {
+    const errorMsg = result.error?.detail || result.error?.error || 'Unknown error'
+    toast.error('Failed to upload proof: ' + errorMsg)
+  }
+}
+
+async function confirmProof(paymentId) {
+  reviewingProofFor.value = paymentId
+  const result = await ordersStore.confirmPaymentProof(paymentId)
+  reviewingProofFor.value = null
+
+  if (result.success) {
+    toast.success('Payment proof confirmed')
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+  } else {
+    const errorMsg = result.error?.detail || result.error?.error || 'Unknown error'
+    toast.error('Failed to confirm proof: ' + errorMsg)
+  }
+}
+
+async function rejectProof(paymentId) {
+  reviewingProofFor.value = paymentId
+  const result = await ordersStore.rejectPaymentProof(paymentId)
+  reviewingProofFor.value = null
+
+  if (result.success) {
+    toast.info('Payment proof rejected — the participant can re-upload')
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+  } else {
+    const errorMsg = result.error?.detail || result.error?.error || 'Unknown error'
+    toast.error('Failed to reject proof: ' + errorMsg)
+  }
 }
 
 async function loadUsers() {

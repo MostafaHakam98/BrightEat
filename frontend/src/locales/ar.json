@@ -1,0 +1,54 @@
+{
+  "nav": {
+    "home": "الرئيسية",
+    "orders": "الطلبات",
+    "wheel": "العجلة",
+    "reports": "التقارير",
+    "pendingPayments": "المدفوعات المعلقة",
+    "feedback": "الاقتراحات",
+    "profile": "الملف الشخصي",
+    "restaurants": "المطاعم",
+    "users": "إدارة المستخدمين",
+    "register": "تسجيل مستخدم",
+    "logout": "تسجيل الخروج",
+    "openMenu": "افتح القائمة",
+    "notifications": "الإشعارات",
+    "markAllRead": "تحديد الكل كمقروء",
+    "noNotifications": "لا توجد إشعارات بعد",
+    "language": "English"
+  },
+  "common": {
+    "loading": "جارٍ التحميل…",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "close": "إغلاق",
+    "confirm": "تأكيد",
+    "delete": "حذف",
+    "retry": "إعادة المحاولة",
+    "back": "رجوع",
+    "egp": "جنيه"
+  },
+  "login": {
+    "title": "تسجيل الدخول إلى OrderQ",
+    "username": "اسم المستخدم أو البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "signIn": "تسجيل الدخول",
+    "signingIn": "جارٍ تسجيل الدخول…",
+    "sso": "تسجيل الدخول عبر Microsoft"
+  },
+  "join": {
+    "joinAndAdd": "← انضم وأضف طلبك",
+    "viewOrder": "← عرض الطلب",
+    "takenToOrder": "سيتم نقلك إلى صفحة الطلب الكاملة",
+    "notFound": "الطلب غير موجود.",
+    "noCode": "لم يتم إدخال كود الطلب."
+  },
+  "order": {
+    "status": {
+      "OPEN": "مفتوح",
+      "LOCKED": "مقفول",
+      "ORDERED": "تم الطلب",
+      "CLOSED": "منتهي"
+    }
+  }
+}

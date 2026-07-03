@@ -5,9 +5,10 @@
         prod-logs prod-logs-backend prod-logs-frontend prod-ps \
         prod-migrate prod-shell deploy
 
-COMPOSE      = docker compose
-PROD_COMPOSE = docker compose -f docker-compose.prod.yml
-BRANCH      ?= devel
+COMPOSE         = docker compose
+PROD_COMPOSE    = docker compose -f docker-compose.prod.yml
+STAGING_COMPOSE = docker compose --env-file .env.staging -f docker-compose.prod.yml -f docker-compose.staging.yml
+BRANCH         ?= devel
 
 # ── Help ─────────────────────────────────────────────────────────────────────
 help: ## Show this help message
@@ -63,7 +64,7 @@ test: ## Run Django tests (local)
 # ── Production ────────────────────────────────────────────────────────────────
 prod-build: ## Build production Docker images (backend + frontend + flutter-pwa)
 	docker build -t orderq-backend:latest -f Dockerfile .
-	docker build -t orderq-frontend:latest -f frontend/Dockerfile frontend/
+	docker build -t orderq-frontend:latest --build-arg VITE_SENTRY_DSN=$(VITE_SENTRY_DSN) -f frontend/Dockerfile frontend/
 	docker build -t orderq-flutter-pwa:latest -f mobile/Dockerfile.pwa mobile/
 
 prod-up: ## Start all production services (detached)
@@ -101,3 +102,22 @@ deploy: ## Pull latest code, rebuild images, restart app services (BRANCH=devel)
 
 backup: ## Dump the production database to backups/ (with retention)
 	./scripts/backup_db.sh
+
+release: ## Build + tag versioned images and a git tag: make release TAG=v1.2.0
+	@test -n "$(TAG)" || (echo "Usage: make release TAG=v1.2.0" && exit 1)
+	docker build -t orderq-backend:$(TAG) -f Dockerfile .
+	docker build -t orderq-frontend:$(TAG) -f frontend/Dockerfile frontend/
+	docker build -t orderq-flutter-pwa:$(TAG) -f mobile/Dockerfile.pwa mobile/
+	git tag -a $(TAG) -m "Release $(TAG)"
+	@echo "Tagged $(TAG). Deploy it with: IMAGE_TAG=$(TAG) in .env, then make prod-up"
+	@echo "Roll back by pointing IMAGE_TAG at the previous tag and re-running make prod-up."
+
+# ── Staging ───────────────────────────────────────────────────────────────────
+staging-up: ## Start the staging stack (ports 29991/29992, own volumes)
+	$(STAGING_COMPOSE) up -d
+
+staging-down: ## Stop the staging stack
+	$(STAGING_COMPOSE) down
+
+staging-logs: ## Tail staging logs
+	$(STAGING_COMPOSE) logs -f

@@ -241,3 +241,7 @@ certbot/
 *.cert
 # Database dumps
 backups/
+
+# Playwright artifacts
+frontend/test-results/
+frontend/playwright-report/

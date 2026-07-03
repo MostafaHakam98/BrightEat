@@ -81,10 +81,51 @@ export const useOrdersStore = defineStore('orders', () => {
     }
   }
 
-  async function lockOrder(orderId) {
+  async function lockOrder(orderId, customAmounts = null) {
     try {
-      const response = await api.post(`/orders/${orderId}/lock/`)
+      const payload = customAmounts ? { custom_amounts: customAmounts } : {}
+      const response = await api.post(`/orders/${orderId}/lock/`, payload)
       updateOrderInList(response.data)
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  async function uploadPaymentProof(paymentId, file) {
+    try {
+      const form = new FormData()
+      form.append('proof', file)
+      const response = await api.post(`/payments/${paymentId}/upload_proof/`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  async function confirmPaymentProof(paymentId) {
+    try {
+      const response = await api.post(`/payments/${paymentId}/confirm_proof/`)
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  async function rejectPaymentProof(paymentId) {
+    try {
+      const response = await api.post(`/payments/${paymentId}/reject_proof/`)
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  async function fetchMyUsual(restaurantId) {
+    try {
+      const response = await api.get(`/restaurants/${restaurantId}/my_usual/`)
       return { success: true, data: response.data }
     } catch (error) {
       return { success: false, error: error.response?.data }
@@ -351,6 +392,10 @@ export const useOrdersStore = defineStore('orders', () => {
     fetchOrders,
     fetchOrderByCode,
     joinOrder,
+    uploadPaymentProof,
+    confirmPaymentProof,
+    rejectPaymentProof,
+    fetchMyUsual,
     addRestaurantFromTalabat,
     syncRestaurantMenu,
     pollTaskStatus,

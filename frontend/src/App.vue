@@ -55,6 +55,15 @@
               </router-link>
             </div>
 
+            <!-- Language toggle -->
+            <button
+              @click="toggleLocale"
+              class="px-2 py-1.5 rounded-md text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              :aria-label="$t('nav.language')"
+            >
+              {{ $t('nav.language') }}
+            </button>
+
             <!-- Theme toggle -->
             <button
               @click="themeStore.toggleTheme()"
@@ -74,7 +83,7 @@
               <button
                 @click="toggleBell"
                 class="relative p-2 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                aria-label="Notifications"
+                :aria-label="$t('nav.notifications')"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
@@ -92,16 +101,16 @@
                   class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden"
                 >
                   <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-                    <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">Notifications</span>
+                    <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ $t('nav.notifications') }}</span>
                     <button
                       v-if="notifStore.unreadCount > 0"
                       @click="notifStore.markAllRead()"
                       class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
-                    >Mark all read</button>
+                    >{{ $t('nav.markAllRead') }}</button>
                   </div>
                   <ul class="max-h-72 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
                     <li v-if="notifStore.notifications.length === 0" class="px-4 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                      No notifications yet
+                      {{ $t('nav.noNotifications') }}
                     </li>
                     <li
                       v-for="n in notifStore.notifications"
@@ -130,7 +139,7 @@
               @click="authStore.logout()"
               class="px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-red-300 dark:hover:border-red-700 hover:text-red-600 dark:hover:text-red-400 transition-colors"
             >
-              Logout
+              {{ $t('nav.logout') }}
             </button>
           </div>
         </div>
@@ -183,22 +192,22 @@
             <nav class="flex-1 px-3 py-4 space-y-1">
               <p class="px-2 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Main</p>
 
-              <SidebarLink to="/" :exact="true" icon="home" @click="sidebarOpen = false">Home</SidebarLink>
-              <SidebarLink to="/orders" icon="orders" @click="sidebarOpen = false">Orders</SidebarLink>
-              <SidebarLink to="/wheel" icon="wheel" @click="sidebarOpen = false">🎡 Wheel</SidebarLink>
-              <SidebarLink to="/reports" icon="reports" @click="sidebarOpen = false">Reports</SidebarLink>
-              <SidebarLink to="/pending-payments" icon="payments" @click="sidebarOpen = false">Payments</SidebarLink>
-              <SidebarLink to="/recommendations" icon="feedback" @click="sidebarOpen = false">Feedback</SidebarLink>
-              <SidebarLink to="/profile" icon="profile" @click="sidebarOpen = false">Profile</SidebarLink>
+              <SidebarLink to="/" :exact="true" icon="home" @click="sidebarOpen = false">{{ $t('nav.home') }}</SidebarLink>
+              <SidebarLink to="/orders" icon="orders" @click="sidebarOpen = false">{{ $t('nav.orders') }}</SidebarLink>
+              <SidebarLink to="/wheel" icon="wheel" @click="sidebarOpen = false">🎡 {{ $t('nav.wheel') }}</SidebarLink>
+              <SidebarLink to="/reports" icon="reports" @click="sidebarOpen = false">{{ $t('nav.reports') }}</SidebarLink>
+              <SidebarLink to="/pending-payments" icon="payments" @click="sidebarOpen = false">{{ $t('nav.pendingPayments') }}</SidebarLink>
+              <SidebarLink to="/recommendations" icon="feedback" @click="sidebarOpen = false">{{ $t('nav.feedback') }}</SidebarLink>
+              <SidebarLink to="/profile" icon="profile" @click="sidebarOpen = false">{{ $t('nav.profile') }}</SidebarLink>
 
               <template v-if="authStore.isManager || authStore.isAdmin">
                 <p class="px-2 pt-4 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Management</p>
-                <SidebarLink to="/restaurants" icon="restaurants" @click="sidebarOpen = false">Restaurants</SidebarLink>
+                <SidebarLink to="/restaurants" icon="restaurants" @click="sidebarOpen = false">{{ $t('nav.restaurants') }}</SidebarLink>
               </template>
 
               <template v-if="authStore.isAdmin">
-                <SidebarLink to="/register" icon="add-user" @click="sidebarOpen = false">Create User</SidebarLink>
-                <SidebarLink to="/users" icon="users" @click="sidebarOpen = false">User Management</SidebarLink>
+                <SidebarLink to="/register" icon="add-user" @click="sidebarOpen = false">{{ $t('nav.register') }}</SidebarLink>
+                <SidebarLink to="/users" icon="users" @click="sidebarOpen = false">{{ $t('nav.users') }}</SidebarLink>
               </template>
             </nav>
 
@@ -211,7 +220,7 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
                 </svg>
-                Logout
+                {{ $t('nav.logout') }}
               </button>
             </div>
           </aside>
@@ -243,6 +252,8 @@ import { RouterLink } from 'vue-router'
 import ToastContainer from './components/ToastContainer.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import { useToast } from './composables/useToast'
+import { useI18n } from 'vue-i18n'
+import { applyLocale } from './i18n'
 import api from './api'
 
 const authStore = useAuthStore()
@@ -250,6 +261,11 @@ const themeStore = useThemeStore()
 const notifStore = useNotificationsStore()
 const router = useRouter()
 const sidebarOpen = ref(false)
+
+const { locale } = useI18n()
+function toggleLocale() {
+  applyLocale(locale.value === 'ar' ? 'en' : 'ar')
+}
 
 // Bell
 const bellOpen = ref(false)

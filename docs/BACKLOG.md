@@ -53,22 +53,26 @@ Tiers are ordered by user impact per unit of effort:
 ## Tier 2 — Flow ease & reach
 
 - [x] **Live list pages** — Home/Orders now refresh via the user-level socket (new orders appear without manual refresh).
-- [ ] **Web push (PWA push).** The killer notification arrives with the app closed ("order locks in 15 min",
-  "you owe 85 EGP"). Requires VAPID keys + `pywebpush` (or FCM) + subscription model + SW push handler in both
-  frontends. Depends on Tier 1 plumbing (done).
-- [ ] **Declutter `OrderDetailView.vue` (2,000 lines).** A manager-collector sees two Delete buttons and duplicate
-  Lock/Close (collector "Actions & Fees" block vs "Manager Actions" block). Unify the action bar; split the view
-  into components (items panel, fees panel, payments panel, actions bar).
-- [ ] **Dark-mode gaps** — "Assign to User" sub-form in OrderDetail uses light-only classes.
+- [x] **Web push (PWA push).** Done end-to-end: `PushSubscription` model + subscribe/unsubscribe/public-key
+  endpoints, `pywebpush` VAPID sender task (prunes dead subscriptions), fan-out from `notify_users`, custom
+  service worker push/notificationclick handlers, opt-in toggle on the Profile page. **Deploy note:** generate
+  VAPID keys (`npx web-push generate-vapid-keys`) and set them in `.env`, else push stays silently disabled.
+- [x] **Declutter `OrderDetailView.vue`.** The duplicated "Manager Actions" block is gone; one role-aware
+  `OrderActionBar` (sticky bottom bar on mobile), an `OrderStepper` (Open→Locked→Ordered→Closed with cutoff
+  countdown / payments-remaining context), an `OrderRoster` ("who's in": joined/ordered/paid per person), and
+  a `CustomSplitModal` (per-person amounts with live remaining-to-allocate; the custom split now has UI).
+  New shared UI kit under `components/ui/` (BaseButton/Badge/Card/Modal with focus trap + aria-modal).
+- [x] **Dark-mode gaps** — "Assign to User" sub-form fixed.
 - [x] **`fetchMenus` store bug** — local `const menus` shadowed the Pinia ref, so the store's `menus` state was never
   populated (masked because callers used the return value).
 - [x] **Strip production `console.log`s** — the `order` computed in OrderDetail logged on every render.
-- [ ] **Offline fallback page** for the Vue PWA; remove the duplicate static `manifest.json`
-  (vite-plugin-pwa already emits `manifest.webmanifest`).
+- [x] **Offline fallback page** (custom SW `setCatchHandler` → precached `offline.html`); duplicate static
+  `manifest.json` removed (vite-plugin-pwa's `manifest.webmanifest` is the single source).
 - [ ] **Reorder flow race** — menu pre-selection from `/?restaurant=&menu=` depends on `onRestaurantChange()` timing.
-- [ ] **A11y pass on custom modals** — Add-to-Menu / Menu-Item / Restaurant / Edit-User modals are plain `<div>`s
-  with no `role="dialog"`, `aria-modal`, or focus trap (only `ConfirmDialog` does it right). Icon-only controls
-  (copy code, ±, ×) need `aria-label`s.
+- [~] **A11y pass on custom modals** — the shared `BaseModal` (focus trap, `aria-modal`, Esc, focus restore) now
+  exists and every *new* dialog uses it. Still open:
+  - [ ] Migrate the legacy Add-to-Menu / Menu-Item / Restaurant / Edit-User plain-`<div>` modals to `BaseModal`;
+    `aria-label`s for icon-only controls (copy code, ±, ×).
 - [ ] **Flutter parity backlog** — SSO login flow is web-only today; every Tier 1/2 feature above needs a Flutter
   counterpart (see Epic: frontend consolidation).
 
@@ -93,14 +97,21 @@ Tiers are ordered by user impact per unit of effort:
     as one; real pagination would break the Flutter client).
 - [ ] **Money as Decimal end-to-end** — serializers/reports cast to `float` in places; switch API money fields to
   string-decimals and fix clients.
-- [ ] **Error tracking + uptime monitoring** — Sentry (backend + frontends) and an uptime check on `/health/`;
-  currently the only observability is `docker logs`.
-- [ ] **Retention/archival policy for `AuditLog` and `Notification`** — both grow unbounded.
-- [ ] **Timezone handling** — `share_message` falls back to manual +2 h because `pytz` isn't installed; use
-  `zoneinfo` ("Africa/Cairo") everywhere.
-- [ ] **Remove dead code:** `msal` dependency (unused — SSO goes through Hive), `MicrosoftCallbackView` stub,
-  `HelloWorld.vue` + Vite starter assets, vestigial `CollectionOrder.instapay_link` (collector's user-level
-  link is what's surfaced).
+- [~] **Error tracking + uptime monitoring** — Sentry wired on backend (`SENTRY_DSN`) and Vue frontend
+  (`VITE_SENTRY_DSN` build arg), both no-ops until a DSN is set. Still open:
+  - [ ] Create the Sentry project + set DSNs in prod; add an external uptime check on `/health/`.
+- [x] **Retention/archival policy for `AuditLog` and `Notification`** — daily beat sweep, 90/365 days,
+  env-tunable (`NOTIFICATION_RETENTION_DAYS`/`AUDIT_LOG_RETENTION_DAYS`).
+- [x] **Timezone handling** — `share_message` now uses `zoneinfo` with `settings.TIME_ZONE`.
+- [~] **Remove dead code:** `msal` dep and Vite starter files (HelloWorld.vue, logos) removed. Still open:
+  - [ ] `MicrosoftCallbackView` stub and vestigial `CollectionOrder.instapay_link` field (needs a migration +
+    client sweep).
+- [x] **Staging environment + versioned releases** — `docker-compose.staging.yml` override (own project name,
+  volumes, ports 29991/29992, `.env.staging`), `IMAGE_TAG`-parameterized prod images, `make release TAG=vX.Y.Z`
+  builds+tags images and a git tag; rollback = point `IMAGE_TAG` back and `make prod-up`.
+- [x] **Frontend test harness** — Vitest store tests (`npm run test`, in CI) and a Playwright golden-path E2E
+  (login → create → add item → lock, plus invite-link deep-linking) via `scripts/run-e2e.sh`, with its own CI
+  job and failure traces.
 
 ## Epics — strategic tracks
 
@@ -127,26 +138,31 @@ backend, global restaurants/menus. To ship anywhere else:
 ### Epic: Frontend consolidation (Vue PWA vs Flutter PWA)
 
 Two full frontends are UA-routed alternates of the same product and already drifting (Flutter lacks SSO).
-Every feature costs double. Decide:
+Every feature costs double.
 
-- **Option A (recommended):** consolidate on the Vue PWA (already installable, responsive, websocket-live);
-  keep the Flutter codebase only if/when native Android/iOS builds are actually wanted.
-- **Option B:** keep both, but enforce a per-release parity checklist and shared API contract tests.
-- [ ] Decision + follow-through.
+- [x] **Decision: Option A — consolidated on the Vue PWA.** nginx now routes all web traffic to `frontend`;
+  the Flutter containers still build/run but receive no traffic (revert instructions are commented in
+  `nginx-router.conf`). The Flutter codebase stays dormant as a base for future native builds.
+- [ ] Follow-through (later): stop building `flutter-pwa` in deploys once the consolidation has soaked;
+  eventually move `mobile/` to its own repo or archive it.
 
 ### Epic: Arabic + RTL i18n
 
 Egyptian audience (EGP, Instapay, Talabat) with an English-only UI.
 
-- [ ] `vue-i18n` scaffold, extract all strings, `dir="rtl"` layout audit, Arabic translations.
+- [x] `vue-i18n` scaffold: locale files (en/ar), persisted locale, `dir`/`lang` switching, language toggle in
+  the top bar. App shell (nav, sidebar, bell) and core strings translated; Arabic falls back to English for
+  untranslated keys, so partial coverage degrades gracefully.
+- [ ] Extract + translate the remaining views (Home, OrderDetail, Reports, …) — mechanical `$t()` sweep.
+- [ ] RTL layout audit (directional paddings/margins/icons) once coverage is broad.
 - [ ] Locale-aware dates/numbers (`Intl`, `ar-EG`).
-- [ ] (If keeping Flutter) mirror with `flutter_localizations`.
 
 ### Epic: Payments beyond honor-system
 
 Instapay confirmation is manual/self-reported. Options to explore (Egypt market):
 
-- [ ] Payment-proof upload (screenshot) attached to a `Payment`, collector approves/rejects.
+- [x] Payment-proof upload (screenshot) attached to a `Payment`; payer uploads, collector confirms/rejects,
+  both sides notified; surfaced on the order page and the Pending Payments screen.
 - [ ] InstaPay/IPN or PSP integration if/when a viable API exists; webhook-driven auto-confirmation.
 - [ ] Cross-order debt netting ("you owe Ahmed 120 across 3 orders — settle once").
 
@@ -155,9 +171,10 @@ Instapay confirmation is manual/self-reported. Options to explore (Egypt market)
 ## Deferred / nice-to-have
 
 - [ ] Scheduled/recurring orders ("every day at 11:00 open a lunch order from X").
-- [ ] Favorites & one-tap reorder of "my usual" per restaurant.
+- [x] Favorites & one-tap reorder — "Add my usual" replays your last order at that restaurant
+  (`GET /restaurants/{id}/my_usual/`).
 - [ ] Order templates per team.
 - [ ] Collector rotation suggestions (fairness stats exist in reports already).
-- [ ] Menu item photos in the picker (Talabat `image_url` is already scraped and stored).
+- [x] Menu item photos in the picker (Talabat `image_url` was already scraped and stored — now rendered).
 - [ ] Slack/Teams webhook integration for order-opened announcements (WhatsApp share text exists).
 - [ ] Talabat scraper resilience: alerting on sync failures, snapshot tests against fixture HTML.

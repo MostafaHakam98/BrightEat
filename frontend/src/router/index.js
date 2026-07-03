@@ -114,13 +114,16 @@ router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    next('/login')
+    // Preserve the destination (e.g. an invite link /join/CODE) so login
+    // drops the user where they were headed instead of at Home.
+    next({ path: '/login', query: to.fullPath !== '/' ? { next: to.fullPath } : {} })
   } else if (to.meta.requiresManager && !authStore.isManager && !authStore.isAdmin) {
     next('/')
   } else if (to.meta.requiresAdmin && !authStore.isAdmin) {
     next('/')
   } else if (to.path === '/login' && authStore.isAuthenticated) {
-    next('/')
+    const target = typeof to.query.next === 'string' && to.query.next.startsWith('/') ? to.query.next : '/'
+    next(target)
   } else {
     next()
   }

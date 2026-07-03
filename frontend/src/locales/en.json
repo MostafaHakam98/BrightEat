@@ -1,0 +1,54 @@
+{
+  "nav": {
+    "home": "Home",
+    "orders": "Orders",
+    "wheel": "Wheel",
+    "reports": "Reports",
+    "pendingPayments": "Pending Payments",
+    "feedback": "Feedback",
+    "profile": "Profile",
+    "restaurants": "Restaurants",
+    "users": "User Management",
+    "register": "Register User",
+    "logout": "Logout",
+    "openMenu": "Open menu",
+    "notifications": "Notifications",
+    "markAllRead": "Mark all read",
+    "noNotifications": "No notifications yet",
+    "language": "العربية"
+  },
+  "common": {
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "retry": "Retry",
+    "back": "Back",
+    "egp": "EGP"
+  },
+  "login": {
+    "title": "Sign in to OrderQ",
+    "username": "Username or email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "sso": "Sign in with Microsoft"
+  },
+  "join": {
+    "joinAndAdd": "→ Join & Add Items",
+    "viewOrder": "→ View Order",
+    "takenToOrder": "You'll be taken to the full order page",
+    "notFound": "Order not found.",
+    "noCode": "No order code provided."
+  },
+  "order": {
+    "status": {
+      "OPEN": "Open",
+      "LOCKED": "Locked",
+      "ORDERED": "Ordered",
+      "CLOSED": "Closed"
+    }
+  }
+}

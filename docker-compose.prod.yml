@@ -54,7 +54,7 @@ services:
       retries: 5
 
   backend:
-    image: orderq-backend:latest
+    image: orderq-backend:${IMAGE_TAG:-latest}
     command: /app/start.sh
     restart: unless-stopped
     # No source bind-mount: the container runs the code baked into the image,
@@ -88,7 +88,7 @@ services:
         condition: service_started
 
   celery-worker:
-    image: orderq-backend:latest
+    image: orderq-backend:${IMAGE_TAG:-latest}
     command: celery -A OrderQ worker --loglevel=info --concurrency=2
     restart: unless-stopped
     environment:
@@ -103,7 +103,7 @@ services:
         condition: service_healthy
 
   celery-beat:
-    image: orderq-backend:latest
+    image: orderq-backend:${IMAGE_TAG:-latest}
     command: celery -A OrderQ beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     restart: unless-stopped
     environment:
@@ -126,13 +126,13 @@ services:
       - LOG_LEVEL=info
 
   frontend:
-    image: orderq-frontend:latest
+    image: orderq-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       - backend
 
   flutter-pwa:
-    image: orderq-flutter-pwa:latest
+    image: orderq-flutter-pwa:${IMAGE_TAG:-latest}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]

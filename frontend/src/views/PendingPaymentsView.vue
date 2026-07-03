@@ -29,7 +29,11 @@
           >
             <div class="flex justify-between items-start">
               <div class="flex-1">
-                <h3 class="text-lg font-semibold dark:text-white">{{ payment.restaurant_name }}</h3>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="text-lg font-semibold dark:text-white">{{ payment.restaurant_name }}</h3>
+                  <BaseBadge v-if="payment.proof_status === 'claimed'" color="yellow">Awaiting confirmation</BaseBadge>
+                  <BaseBadge v-else-if="payment.proof_status === 'rejected'" color="red">Proof rejected — try again</BaseBadge>
+                </div>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Order Code: <span class="font-mono">{{ payment.order_code }}</span></p>
                 <p class="text-sm text-gray-600 dark:text-gray-400">Collector: {{ payment.collector_name }}</p>
                 <p class="text-sm text-gray-600 dark:text-gray-400">Status:
@@ -78,13 +82,21 @@
                 >
                   View Order
                 </router-link>
-                <button
-                  @click="markAsPaid(payment.payment_id)"
-                  :disabled="markingPaid === payment.payment_id"
-                  class="bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 text-sm"
+                <BaseButton
+                  variant="secondary"
+                  :loading="uploadingProof === payment.payment_id"
+                  @click="triggerProofUpload(payment)"
                 >
-                  {{ markingPaid === payment.payment_id ? 'Marking...' : 'Mark as Paid' }}
-                </button>
+                  {{ payment.proof_status === 'rejected' ? 'Re-upload Proof' : 'Upload Proof' }}
+                </BaseButton>
+                <BaseButton
+                  :variant="payment.proof_status === 'claimed' ? 'ghost' : 'success'"
+                  :class="payment.proof_status === 'claimed' ? 'opacity-60' : ''"
+                  :loading="markingPaid === payment.payment_id"
+                  @click="markAsPaid(payment.payment_id)"
+                >
+                  Mark as Paid
+                </BaseButton>
               </div>
             </div>
           </div>
@@ -124,6 +136,55 @@
                   </span>
                 </p>
                 <p class="text-xl font-bold text-green-600 dark:text-green-400 mt-2">{{ formatPrice(payment.amount) }} EGP</p>
+
+                <!-- Payment proof review -->
+                <div
+                  v-if="payment.proof_status === 'claimed'"
+                  class="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700"
+                >
+                  <div class="flex items-center gap-2 mb-2 flex-wrap">
+                    <BaseBadge color="yellow">Proof submitted</BaseBadge>
+                    <span class="text-xs text-gray-600 dark:text-gray-400">{{ payment.payer_name }} claims this payment was made</span>
+                  </div>
+                  <div class="flex items-center gap-3 flex-wrap">
+                    <button
+                      v-if="payment.proof_image_url"
+                      type="button"
+                      class="shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      aria-label="View payment proof"
+                      @click="openProofModal(payment)"
+                    >
+                      <img
+                        :src="payment.proof_image_url"
+                        alt="Payment proof thumbnail"
+                        class="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-600 hover:opacity-80 transition-opacity"
+                      />
+                    </button>
+                    <div class="flex gap-2">
+                      <BaseButton
+                        variant="success"
+                        size="sm"
+                        :loading="confirmingProof === payment.payment_id"
+                        :disabled="rejectingProof === payment.payment_id"
+                        @click="confirmProof(payment)"
+                      >
+                        Confirm
+                      </BaseButton>
+                      <BaseButton
+                        variant="danger"
+                        size="sm"
+                        :loading="rejectingProof === payment.payment_id"
+                        :disabled="confirmingProof === payment.payment_id"
+                        @click="rejectProof(payment)"
+                      >
+                        Reject
+                      </BaseButton>
+                    </div>
+                  </div>
+                </div>
+                <div v-else-if="payment.proof_status === 'rejected'" class="mt-2">
+                  <BaseBadge color="red">Proof rejected</BaseBadge>
+                </div>
               </div>
               <div class="flex flex-col space-y-2 ml-4">
                 <router-link
@@ -138,6 +199,30 @@
         </div>
       </div>
     </div>
+
+    <!-- Hidden file input for proof uploads -->
+    <input
+      ref="proofFileInput"
+      type="file"
+      accept="image/*"
+      class="hidden"
+      @change="onProofFileSelected"
+    />
+
+    <!-- Full-size proof image modal -->
+    <BaseModal
+      :open="proofModal.open"
+      :title="proofModal.payer ? `Payment proof — ${proofModal.payer}` : 'Payment proof'"
+      size="lg"
+      @close="closeProofModal"
+    >
+      <img
+        v-if="proofModal.url"
+        :src="proofModal.url"
+        alt="Payment proof"
+        class="w-full max-h-[70vh] object-contain rounded-lg"
+      />
+    </BaseModal>
   </div>
 </template>
 
@@ -146,15 +231,28 @@ import { ref, onMounted, computed } from 'vue'
 import api from '../api'
 import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
+import { useOrdersStore } from '../stores/orders'
+import BaseButton from '../components/ui/BaseButton.vue'
+import BaseBadge from '../components/ui/BaseBadge.vue'
+import BaseModal from '../components/ui/BaseModal.vue'
 
 const toast = useToast()
 const { confirm: $confirm } = useConfirm()
+const ordersStore = useOrdersStore()
 
 const loading = ref(true)
 const pendingPayments = ref([])
 const paymentsOwedToMe = ref([])
 const markingPaid = ref(null)
 const expandedQR = ref(null)
+
+// Payment proof state
+const proofFileInput = ref(null)
+const proofUploadTarget = ref(null)
+const uploadingProof = ref(null)
+const confirmingProof = ref(null)
+const rejectingProof = ref(null)
+const proofModal = ref({ open: false, url: null, payer: '' })
 
 function toggleQR(paymentId) {
   expandedQR.value = expandedQR.value === paymentId ? null : paymentId
@@ -200,6 +298,77 @@ async function markAsPaid(paymentId) {
     toast.error('Failed to mark payment as paid: ' + (error.response?.data?.error || error.message))
   } finally {
     markingPaid.value = null
+  }
+}
+
+function triggerProofUpload(payment) {
+  proofUploadTarget.value = payment
+  proofFileInput.value?.click()
+}
+
+async function onProofFileSelected(event) {
+  const file = event.target.files?.[0]
+  event.target.value = '' // allow re-selecting the same file later
+  const payment = proofUploadTarget.value
+  proofUploadTarget.value = null
+  if (!file || !payment) return
+
+  uploadingProof.value = payment.payment_id
+  const result = await ordersStore.uploadPaymentProof(payment.payment_id, file)
+  uploadingProof.value = null
+
+  if (result.success) {
+    payment.proof_status = 'claimed'
+    if (result.data?.proof_image_url) payment.proof_image_url = result.data.proof_image_url
+    toast.success(`Proof sent to ${payment.collector_name} for confirmation`)
+  } else {
+    toast.error('Failed to upload proof: ' + (result.error?.error || result.error?.detail || 'Unknown error'))
+  }
+}
+
+function openProofModal(payment) {
+  proofModal.value = { open: true, url: payment.proof_image_url, payer: payment.payer_name }
+}
+
+function closeProofModal() {
+  proofModal.value = { ...proofModal.value, open: false }
+}
+
+async function confirmProof(payment) {
+  const ok = await $confirm(
+    `Confirm you received ${formatPrice(payment.amount)} EGP from ${payment.payer_name}?`,
+    'Confirm Payment Proof'
+  )
+  if (!ok) return
+
+  confirmingProof.value = payment.payment_id
+  const result = await ordersStore.confirmPaymentProof(payment.payment_id)
+  confirmingProof.value = null
+
+  if (result.success) {
+    paymentsOwedToMe.value = paymentsOwedToMe.value.filter(p => p.payment_id !== payment.payment_id)
+    toast.success(`Payment from ${payment.payer_name} confirmed`)
+  } else {
+    toast.error('Failed to confirm proof: ' + (result.error?.error || result.error?.detail || 'Unknown error'))
+  }
+}
+
+async function rejectProof(payment) {
+  const ok = await $confirm(
+    `Reject the payment proof from ${payment.payer_name}? They will be asked to try again.`,
+    'Reject Payment Proof'
+  )
+  if (!ok) return
+
+  rejectingProof.value = payment.payment_id
+  const result = await ordersStore.rejectPaymentProof(payment.payment_id)
+  rejectingProof.value = null
+
+  if (result.success) {
+    payment.proof_status = 'rejected'
+    toast.info(`Proof from ${payment.payer_name} rejected`)
+  } else {
+    toast.error('Failed to reject proof: ' + (result.error?.error || result.error?.detail || 'Unknown error'))
   }
 }
 

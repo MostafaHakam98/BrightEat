@@ -108,6 +108,27 @@
       </form>
     </div>
 
+    <!-- Push Notifications -->
+    <div v-if="push.supported" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700 mb-6">
+      <h2 class="text-xl font-semibold mb-2 text-gray-800 dark:text-white">Push Notifications</h2>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        Get notified even when OrderQ is closed — order about to lock, payment due, payment received.
+      </p>
+      <button
+        type="button"
+        :disabled="push.busy.value"
+        @click="togglePush"
+        :class="[
+          'px-4 py-2 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50',
+          push.subscribed.value
+            ? 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-gray-500'
+            : 'bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600 focus:ring-blue-500',
+        ]"
+      >
+        {{ push.busy.value ? 'Working…' : (push.subscribed.value ? 'Disable on this device' : 'Enable on this device') }}
+      </button>
+    </div>
+
     <!-- Change Password Section -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
       <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Change Password</h2>
@@ -170,8 +191,19 @@ import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
 import api from '../api'
 import { useToast } from '../composables/useToast'
+import { usePush } from '../composables/usePush'
 
 const toast = useToast()
+const push = usePush()
+
+async function togglePush() {
+  const result = push.subscribed.value ? await push.disable() : await push.enable()
+  if (result.success) {
+    toast.success(push.subscribed.value ? 'Push notifications enabled on this device' : 'Push notifications disabled')
+  } else {
+    toast.error(result.error)
+  }
+}
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -199,6 +231,7 @@ const passwordError = ref('')
 const qrCodeFile = ref(null)
 
 onMounted(() => {
+  push.refreshState()
   if (authStore.user) {
     profile.value = {
       username: authStore.user.username || '',

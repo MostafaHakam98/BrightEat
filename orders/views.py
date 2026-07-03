@@ -819,6 +819,8 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
                 'payment_type': 'owed_by_me',
                 'collector_instapay_link': collector.instapay_link or '',
                 'collector_instapay_qr_code_url': qr_url,
+                'proof_status': payment.proof_status,
+                'proof_image_url': request.build_absolute_uri(payment.proof_image.url) if payment.proof_image else None,
             })
         
         return Response(result)
@@ -843,6 +845,8 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
                 'payment_id': payment.id,
                 'order_status': payment.order.status,
                 'payment_type': 'owed_to_me',  # Others owe this to user
+                'proof_status': payment.proof_status,
+                'proof_image_url': request.build_absolute_uri(payment.proof_image.url) if payment.proof_image else None,
             })
         
         return Response(result)
