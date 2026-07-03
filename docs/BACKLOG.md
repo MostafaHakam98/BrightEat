@@ -89,7 +89,8 @@ Tiers are ordered by user impact per unit of effort:
 - [x] **Perf quick wins:**
   - Participants N+1 on the orders list (serializer now reuses prefetched items).
   - DB indexes on hot columns: `Payment(is_paid, user)`, `CollectionOrder(status)`, `Notification(user, is_read)`.
-  - Pagination on the notifications endpoint (bell fetches page 1; unbounded growth otherwise).
+  - Notifications list capped at the latest 100 (response stays a plain array — both frontends parse it
+    as one; real pagination would break the Flutter client).
 - [ ] **Money as Decimal end-to-end** — serializers/reports cast to `float` in places; switch API money fields to
   string-decimals and fix clients.
 - [ ] **Error tracking + uptime monitoring** — Sentry (backend + frontends) and an uptime check on `/health/`;
