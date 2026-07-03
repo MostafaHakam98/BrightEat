@@ -99,6 +99,9 @@ deploy: ## Pull latest code, rebuild images, restart app services (BRANCH=devel)
 	git pull origin $(BRANCH)
 	$(MAKE) prod-build
 	$(PROD_COMPOSE) up -d backend celery-worker celery-beat frontend flutter-pwa
+	# nginx resolves container IPs at startup — recreated services get new
+	# IPs, so the router must restart or /api starts returning 502s
+	$(PROD_COMPOSE) restart nginx-router
 
 backup: ## Dump the production database to backups/ (with retention)
 	./scripts/backup_db.sh
