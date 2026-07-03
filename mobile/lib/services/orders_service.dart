@@ -257,6 +257,15 @@ class OrdersService {
     }
   }
 
+  Future<bool> joinOrder(int orderId) async {
+    try {
+      await apiService.joinOrder(orderId);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<List<Restaurant>> fetchRestaurants() async {
     try {
       final response = await apiService.getRestaurants();

@@ -1,7 +1,7 @@
 name: orderq_mobile
 description: OrderQ mobile application for iOS and Android
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -47,10 +47,23 @@ dependencies:
   # WebSocket
   web_socket_channel: ^2.4.0
 
+  # Crypto (certificate fingerprint pinning)
+  crypto: ^3.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+# Generate Android/iOS launcher icons from a single source:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/app_icon.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/images/app_icon_foreground.png"
 
 flutter:
   uses-material-design: true

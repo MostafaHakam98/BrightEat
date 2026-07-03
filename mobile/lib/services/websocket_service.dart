@@ -49,7 +49,8 @@ class WebSocketService {
       final wsUrl =
           '${AppConfig.wsBaseUrl}/ws/orders/${_currentOrderId}/?token=${Uri.encodeComponent(token)}';
 
-      print('🔌 Connecting to WebSocket: $wsUrl');
+      // Strip the ?token= query — never log the JWT.
+      print('🔌 Connecting to WebSocket: ${wsUrl.split('?').first}');
 
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 

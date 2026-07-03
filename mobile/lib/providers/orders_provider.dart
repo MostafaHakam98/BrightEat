@@ -134,6 +134,14 @@ class OrdersProvider extends ChangeNotifier {
     return success;
   }
 
+  Future<bool> joinOrder(int orderId) async {
+    final success = await ordersService.joinOrder(orderId);
+    if (success) {
+      await fetchOrderByCode(_currentOrder?.code ?? '');
+    }
+    return success;
+  }
+
   Future<bool> unlockOrder(int orderId) async {
     final success = await ordersService.unlockOrder(orderId);
     if (success) {

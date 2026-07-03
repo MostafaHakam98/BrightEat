@@ -68,11 +68,19 @@ class JoinOrderScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () => context.push('/orders/${order.code}'),
+                  // Register participation (adds you to the roster and notifies
+                  // the collector) before navigating — matches the web app, so
+                  // you're not invisible until you add an item.
+                  onPressed: () async {
+                    if (order.status == 'OPEN') {
+                      await ordersProvider.joinOrder(order.id);
+                    }
+                    if (context.mounted) context.push('/orders/${order.code}');
+                  },
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 48),
                   ),
-                  child: const Text('View Order Details'),
+                  child: Text(order.status == 'OPEN' ? 'Join & Add Items' : 'View Order Details'),
                 ),
               ],
             ),
