@@ -3,6 +3,14 @@
 Prioritized backlog derived from a full repo audit (backend, Vue frontend, Flutter PWA, infra) on 2026-07-03.
 Status legend: `[ ]` open · `[x]` done · `[~]` partially done / in progress.
 
+> **Deployed to production (EC2) 2026-07-04** from `devel`: everything marked `[x]` below is live.
+> Server-side secrets moved to `.env` (SECRET_KEY carried over, DB password rotated, VAPID keys generated),
+> nightly backup cron installed, CI (tests + build + E2E) green on `devel`.
+>
+> **Product decision 2026-07-04:** restaurants, menus, menu items, fee presets, and the Talabat
+> scraper are open to ALL authenticated users (previously manager/admin-only). Admin-only remains:
+> user management, registration, role changes.
+
 Tiers are ordered by user impact per unit of effort:
 
 - **Tier 0** — broken or dangerous in production today.
@@ -82,8 +90,8 @@ Tiers are ordered by user impact per unit of effort:
 - [x] **Tests for the money math** — fee-split calculation (equal / proportional / collector_pays / custom) had zero
   coverage; it's the one place bugs cost users real money. Plus tests for join, notifications, cutoff auto-lock,
   and payment reminders.
-- [x] **Automated DB backups** — nightly `pg_dump` script with retention (`scripts/backup_db.sh`) + cron install
-  instructions. Offsite copy (S3/rclone) still open:
+- [x] **Automated DB backups** — nightly `pg_dump` script with retention (`scripts/backup_db.sh`);
+  cron installed on the EC2 host 2026-07-04 (02:30 daily) and verified with a live run. Still open:
   - [ ] Offsite/encrypted backup replication + restore drill.
 - [x] **Prod compose hardening:** `restart: unless-stopped` on all services, backend healthcheck, removed
   source bind-mounts over images (deploys now run the built artifact), pinned image tags, `depends_on:

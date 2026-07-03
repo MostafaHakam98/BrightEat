@@ -177,7 +177,8 @@ class RegisterView(APIView):
 class RestaurantViewSet(viewsets.ModelViewSet):
     queryset = Restaurant.objects.all()
     serializer_class = RestaurantSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    # Open to all users: anyone can add restaurants/menus (team decision 2026-07)
+    permission_classes = [permissions.IsAuthenticated]
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -190,12 +191,6 @@ class RestaurantViewSet(viewsets.ModelViewSet):
         Returns 201 immediately; if sync_now=true, enqueues an async Celery task
         and returns task_id so the frontend can poll for status.
         """
-        if request.user.role not in ['manager', 'admin']:
-            return Response(
-                {'error': 'Only managers or administrators can add restaurants from Talabat'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
         talabat_url = request.data.get('talabat_url')
         sync_now = request.data.get('sync_now', False)
 
@@ -281,12 +276,6 @@ class RestaurantViewSet(viewsets.ModelViewSet):
         Enqueue an async Celery task to sync the menu for this restaurant from Talabat.
         Returns 202 Accepted with a task_id; poll GET /api/task-status/{task_id}/ for progress.
         """
-        if request.user.role not in ['manager', 'admin']:
-            return Response(
-                {'error': 'Only managers or administrators can sync menus'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
         restaurant = self.get_object()
         menu = restaurant.menus.filter(talabat_url__isnull=False).exclude(talabat_url='').first()
 
@@ -342,7 +331,7 @@ class RestaurantViewSet(viewsets.ModelViewSet):
 class MenuViewSet(viewsets.ModelViewSet):
     queryset = Menu.objects.all()
     serializer_class = MenuSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
         restaurant_id = self.request.query_params.get('restaurant')
@@ -357,7 +346,7 @@ class MenuViewSet(viewsets.ModelViewSet):
 class MenuItemViewSet(viewsets.ModelViewSet):
     queryset = MenuItem.objects.all()
     serializer_class = MenuItemSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = None  # Disable pagination for menu items - show all items
     
     def get_queryset(self):
@@ -1663,7 +1652,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 class FeePresetViewSet(viewsets.ModelViewSet):
     queryset = FeePreset.objects.all()
     serializer_class = FeePresetSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class RecommendationViewSet(viewsets.ModelViewSet):
