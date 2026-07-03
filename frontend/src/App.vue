@@ -189,14 +189,11 @@
               <SidebarLink to="/reports" icon="reports" @click="sidebarOpen = false">{{ $t('nav.reports') }}</SidebarLink>
               <SidebarLink to="/pending-payments" icon="payments" @click="sidebarOpen = false">{{ $t('nav.pendingPayments') }}</SidebarLink>
               <SidebarLink to="/recommendations" icon="feedback" @click="sidebarOpen = false">{{ $t('nav.feedback') }}</SidebarLink>
+              <SidebarLink to="/restaurants" icon="restaurants" @click="sidebarOpen = false">{{ $t('nav.restaurants') }}</SidebarLink>
               <SidebarLink to="/profile" icon="profile" @click="sidebarOpen = false">{{ $t('nav.profile') }}</SidebarLink>
 
-              <template v-if="authStore.isManager || authStore.isAdmin">
-                <p class="px-2 pt-4 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Management</p>
-                <SidebarLink to="/restaurants" icon="restaurants" @click="sidebarOpen = false">{{ $t('nav.restaurants') }}</SidebarLink>
-              </template>
-
               <template v-if="authStore.isAdmin">
+                <p class="px-2 pt-4 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Management</p>
                 <SidebarLink to="/register" icon="add-user" @click="sidebarOpen = false">{{ $t('nav.register') }}</SidebarLink>
                 <SidebarLink to="/users" icon="users" @click="sidebarOpen = false">{{ $t('nav.users') }}</SidebarLink>
               </template>

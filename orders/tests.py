@@ -642,3 +642,50 @@ class ShareMessageCutoffTest(TestCase):
         }, format='json')
         self.assertEqual(res.status_code, 201)
         self.assertIn('03:00 PM', res.data['share_message'])
+
+
+class OpenMenuAccessTest(TestCase):
+    """All authenticated users (role 'user') can manage restaurants/menus and
+    use the Talabat integration — previously manager/admin-only."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.user = make_user('regular')  # plain 'user' role
+        token = get_token(self.client, 'regular')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+    def test_user_can_create_restaurant_menu_and_item(self):
+        res = self.client.post('/api/restaurants/', {'name': 'Koshary Corner'}, format='json')
+        self.assertEqual(res.status_code, 201)
+        restaurant_id = res.data['id']
+
+        res = self.client.post('/api/menus/', {'restaurant': restaurant_id, 'name': 'Main'}, format='json')
+        self.assertEqual(res.status_code, 201)
+        menu_id = res.data['id']
+
+        res = self.client.post('/api/menu-items/', {
+            'menu': menu_id, 'name': 'Koshary', 'price': '45.00',
+        }, format='json')
+        self.assertEqual(res.status_code, 201)
+
+    def test_user_can_add_from_talabat(self):
+        res = self.client.post('/api/restaurants/add_from_talabat/', {
+            'talabat_url': 'https://www.talabat.com/egypt/restaurant/123/test',
+            'sync_now': False,
+        }, format='json')
+        self.assertNotEqual(res.status_code, 403)
+
+    def test_user_can_trigger_sync(self):
+        restaurant = Restaurant.objects.create(name='NoTalabat', created_by=self.user)
+        res = self.client.post(f'/api/restaurants/{restaurant.id}/sync_menu/')
+        # 400 (no talabat URL configured) proves the request passed the old
+        # manager-only gate — it must not be 403 anymore
+        self.assertEqual(res.status_code, 400)
+
+    def test_user_can_create_fee_preset(self):
+        res = self.client.post('/api/fee-presets/', {
+            'name': 'Standard', 'delivery_fee': '30.00', 'tip': '20.00',
+            'service_fee': '0.00', 'fee_split_rule': 'equal',
+        }, format='json')
+        self.assertEqual(res.status_code, 201)

@@ -52,13 +52,13 @@ const router = createRouter({
       path: '/restaurants',
       name: 'Restaurants',
       component: () => import('../views/RestaurantsView.vue'),
-      meta: { requiresAuth: true, requiresManager: true },
+      meta: { requiresAuth: true },
     },
     {
       path: '/restaurants/:restaurantId/menus',
       name: 'MenuManagement',
       component: () => import('../views/MenuManagementView.vue'),
-      meta: { requiresAuth: true, requiresManager: true },
+      meta: { requiresAuth: true },
     },
     {
       path: '/reports',
