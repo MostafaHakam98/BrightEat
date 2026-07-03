@@ -121,8 +121,10 @@ class CollectionOrder(models.Model):
     restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='orders')
     menu = models.ForeignKey(Menu, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', help_text="Optional menu for this order")
     collector = models.ForeignKey(User, on_delete=models.CASCADE, related_name='collected_orders')
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='OPEN')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='OPEN', db_index=True)
     cutoff_time = models.DateTimeField(null=True, blank=True)
+    cutoff_reminder_sent = models.BooleanField(default=False, help_text="Whether the pre-cutoff reminder was sent")
+    cutoff_processed = models.BooleanField(default=False, help_text="Whether the cutoff auto-lock has been handled")
     instapay_link = models.URLField(blank=True)
     is_private = models.BooleanField(default=False, help_text="If True, only participants can see this order")
     
@@ -134,6 +136,10 @@ class CollectionOrder(models.Model):
     
     # Assigned users - if set, only these users can join the order
     assigned_users = models.ManyToManyField(User, related_name='assigned_orders', blank=True, help_text="Users assigned to this order (e.g., for birthday cake)")
+
+    # Users who explicitly joined (may not have added items yet).
+    # Unlike assigned_users this never restricts access — it's a roster.
+    joined_users = models.ManyToManyField(User, related_name='joined_orders', blank=True, help_text="Users who explicitly joined this order")
     
     created_at = models.DateTimeField(auto_now_add=True)
     locked_at = models.DateTimeField(null=True, blank=True)
@@ -169,6 +175,17 @@ class CollectionOrder(models.Model):
     def get_participants(self):
         """Get all users who have items in this order"""
         return User.objects.filter(order_items__order=self).distinct()
+
+    def get_notification_recipients(self):
+        """Everyone who should hear about this order: item owners, joined users,
+        assigned users, and the collector. Broader than get_participants(), which
+        only covers users who owe money (i.e. have items)."""
+        return User.objects.filter(
+            models.Q(order_items__order=self) |
+            models.Q(joined_orders=self) |
+            models.Q(assigned_orders=self) |
+            models.Q(collected_orders=self)
+        ).distinct()
 
 
 class OrderItem(models.Model):
@@ -209,10 +226,14 @@ class Payment(models.Model):
     is_paid = models.BooleanField(default=False)
     paid_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['-created_at']
-    
+        indexes = [
+            models.Index(fields=['is_paid', 'user']),
+            models.Index(fields=['order', 'is_paid']),
+        ]
+
     def __str__(self):
         status = "Paid" if self.is_paid else "Pending"
         return f"{self.user.username} - {self.amount} EGP ({status})"
@@ -292,6 +313,9 @@ class Notification(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_read']),
+        ]
 
     def __str__(self):
         return f"{self.user.username} — {self.message[:60]}"

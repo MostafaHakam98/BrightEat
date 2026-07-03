@@ -4,7 +4,6 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../config/app_config.dart';
-import 'api_service.dart';
 
 class NotificationsWebSocketService {
   WebSocketChannel? _channel;
@@ -42,32 +41,9 @@ class NotificationsWebSocketService {
         return;
       }
 
-      // Convert http:// to ws:// or https:// to wss://
-      String baseUrl = ApiService.baseUrl;
-      
-      // Remove trailing slash if present
-      if (baseUrl.endsWith('/')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
-      }
-      
-      // Remove /api suffix if present (WebSocket routes are at root level, not under /api)
-      if (baseUrl.endsWith('/api')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 4);
-      }
-      
-      // Convert protocol
-      String wsUrl;
-      if (baseUrl.startsWith('https://')) {
-        wsUrl = baseUrl.replaceFirst('https://', 'wss://');
-      } else if (baseUrl.startsWith('http://')) {
-        wsUrl = baseUrl.replaceFirst('http://', 'ws://');
-      } else {
-        // If no protocol, assume ws://
-        wsUrl = 'ws://$baseUrl';
-      }
-      
-      // Construct WebSocket URL for general notifications
-      wsUrl = '$wsUrl/ws/notifications/?token=${Uri.encodeComponent(token)}';
+      // WebSocket routes live at the root (/ws), not under /api
+      final wsUrl =
+          '${AppConfig.wsBaseUrl}/ws/notifications/?token=${Uri.encodeComponent(token)}';
 
       print('🔌 Connecting to notifications WebSocket: $wsUrl');
 

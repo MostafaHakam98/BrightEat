@@ -321,6 +321,7 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
     participants = serializers.SerializerMethodField()
     assigned_users = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all(), required=False)
     assigned_users_details = serializers.SerializerMethodField()
+    joined_users_details = serializers.SerializerMethodField()
     payments = serializers.SerializerMethodField()
     total_items_cost = serializers.SerializerMethodField()
     total_cost = serializers.SerializerMethodField()
@@ -345,7 +346,7 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
         fields = ['id', 'code', 'restaurant', 'restaurant_name', 'menu', 'menu_name', 'collector', 'collector_name', 'collector_instapay_link', 'collector_instapay_qr_code_url',
                   'status', 'cutoff_time', 'instapay_link', 'is_private', 'assigned_users', 'assigned_users_details',
                   'delivery_fee', 'tip', 'service_fee', 'fee_split_rule', 'created_at', 'locked_at', 'ordered_at', 'closed_at',
-                  'items', 'participants', 'payments', 'total_items_cost', 'total_cost', 
+                  'items', 'participants', 'joined_users_details', 'payments', 'total_items_cost', 'total_cost',
                   'share_message', 'join_url']
         read_only_fields = ['id', 'code', 'collector', 'created_at', 'locked_at', 'ordered_at', 'closed_at', 'assigned_users_details']
     
@@ -361,8 +362,15 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
         return None
     
     def get_participants(self, obj):
-        participants = obj.get_participants()
-        return [{'id': p.id, 'username': p.username, 'email': p.email} for p in participants]
+        # Derive from the (prefetched) items instead of a fresh query per order —
+        # the orders list serializes many orders and would N+1 otherwise.
+        seen = {}
+        for item in obj.items.all():
+            seen.setdefault(item.user_id, item.user)
+        return [{'id': p.id, 'username': p.username, 'email': p.email} for p in seen.values()]
+
+    def get_joined_users_details(self, obj):
+        return [{'id': u.id, 'username': u.username} for u in obj.joined_users.all()]
     
     def get_payments(self, obj):
         payments = obj.payments.all()

@@ -1,35 +1,44 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class AppConfig {
-  // Backend server configuration
-  // For production server (accessible from internet):
-  static const String productionUrl = 'http://51.20.151.57:19992/api';
-  
-  // For local network (when PWA is accessed from same network):
-  static const String localNetworkUrl = 'http://192.168.100.26:19992/api';
-  
+  // Optional build-time override:
+  //   flutter build web --dart-define=API_BASE_URL=https://example.com/api
+  static const String _apiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
+
+  // Fallback for native (non-web) builds where there is no page origin.
+  static const String productionUrl =
+      'https://orderq.acai.brightskiesinc.com:19991/api';
+
   // For Android emulator (use 10.0.2.2 to access host machine):
   static const String androidEmulatorUrl = 'http://10.0.2.2:19992/api';
-  
+
   // For iOS simulator (use localhost):
   static const String iosSimulatorUrl = 'http://localhost:19992/api';
-  
-  // Get the appropriate URL based on platform
+
+  /// REST base URL.
+  ///
+  /// On web the PWA is served by the same nginx that proxies /api to the
+  /// backend, so the page origin is always correct (and same-origin — no
+  /// mixed-content or CORS issues). Never hardcode a host here for web.
   static String get apiBaseUrl {
-    // Web platform - use production URL (or local network if on same network)
-    if (kIsWeb) {
-      // For web/PWA, use production URL
-      // If accessing from local network, you can change this to localNetworkUrl
-      return productionUrl;
-    }
-    
-    // Mobile platforms - default to production
-    // Platform checks are not needed since we already handle web above
+    if (_apiBaseUrlOverride.isNotEmpty) return _apiBaseUrlOverride;
+    if (kIsWeb) return '${Uri.base.origin}/api';
     return productionUrl;
   }
-  
-  // You can manually override by uncommenting one of these:
-  // static String get apiBaseUrl => androidEmulatorUrl;  // For Android emulator
-  // static String get apiBaseUrl => iosSimulatorUrl;     // For iOS simulator
-  // static String get apiBaseUrl => productionUrl;       // For production/physical device
+
+  /// WebSocket base URL (no /api suffix — nginx routes /ws at the root).
+  /// e.g. wss://host:19991 → connect to '$wsBaseUrl/ws/orders/1/'.
+  static String get wsBaseUrl {
+    var base = apiBaseUrl;
+    if (base.endsWith('/api')) {
+      base = base.substring(0, base.length - '/api'.length);
+    }
+    if (base.startsWith('https://')) {
+      return base.replaceFirst('https://', 'wss://');
+    }
+    if (base.startsWith('http://')) {
+      return base.replaceFirst('http://', 'ws://');
+    }
+    return 'wss://$base';
+  }
 }

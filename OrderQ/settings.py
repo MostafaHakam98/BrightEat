@@ -233,6 +233,14 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://localhost')
 # Hive (BSACAIPortal) SSO — URL of the Hive backend, e.g. https://acai.brightskiesinc.com
 HIVE_URL = os.environ.get('HIVE_URL', '')
 
+# Email domains allowed to sign in via SSO (comma-separated). Company-specific
+# today; per-tenant configuration once multi-tenancy lands (see docs/BACKLOG.md).
+SSO_ALLOWED_EMAIL_DOMAINS = [
+    d.strip().lstrip('@')
+    for d in os.environ.get('SSO_ALLOWED_EMAIL_DOMAINS', 'brightskiesinc.com').split(',')
+    if d.strip()
+]
+
 # Cite API base URL
 CITE_API_BASE_URL = os.environ.get('CITE_API_BASE_URL', '')
 
@@ -244,6 +252,20 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Schedules defined here are synced into the DatabaseScheduler on beat startup.
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    'enforce-order-cutoffs': {
+        'task': 'enforce_order_cutoffs',
+        'schedule': 60.0,  # every minute
+    },
+    'send-payment-reminders': {
+        'task': 'send_payment_reminders',
+        'schedule': crontab(hour=11, minute=0),  # daily, Africa/Cairo
+    },
+}
 
 # Logging
 LOGGING = {
