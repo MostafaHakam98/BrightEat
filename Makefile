@@ -61,9 +61,10 @@ test: ## Run Django tests (local)
 	$(COMPOSE) exec backend python manage.py test
 
 # ── Production ────────────────────────────────────────────────────────────────
-prod-build: ## Build production Docker images (backend + frontend)
+prod-build: ## Build production Docker images (backend + frontend + flutter-pwa)
 	docker build -t orderq-backend:latest -f Dockerfile .
 	docker build -t orderq-frontend:latest -f frontend/Dockerfile frontend/
+	docker build -t orderq-flutter-pwa:latest -f mobile/Dockerfile.pwa mobile/
 
 prod-up: ## Start all production services (detached)
 	$(PROD_COMPOSE) up -d
@@ -93,7 +94,10 @@ prod-shell: ## Open Django shell (production)
 	$(PROD_COMPOSE) exec backend python manage.py shell
 
 # ── Deploy ────────────────────────────────────────────────────────────────────
-deploy: ## Pull latest code, rebuild images, restart backend + frontend (BRANCH=devel)
+deploy: ## Pull latest code, rebuild images, restart app services (BRANCH=devel)
 	git pull origin $(BRANCH)
 	$(MAKE) prod-build
-	$(PROD_COMPOSE) up -d backend frontend
+	$(PROD_COMPOSE) up -d backend celery-worker celery-beat frontend flutter-pwa
+
+backup: ## Dump the production database to backups/ (with retention)
+	./scripts/backup_db.sh
