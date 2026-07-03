@@ -61,10 +61,10 @@ const currentIndex = computed(() => {
 
 function circleClass(i) {
   if (i < currentIndex.value) {
-    return 'border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30'
+    return 'border-blue-500 dark:border-blue-400 text-indigo-600 dark:text-indigo-400 bg-blue-50 dark:bg-blue-900/30'
   }
   if (i === currentIndex.value) {
-    return 'border-blue-600 dark:border-blue-500 bg-blue-600 dark:bg-blue-500 text-white'
+    return 'border-indigo-600 dark:border-indigo-500 bg-indigo-600 dark:bg-indigo-500 text-white'
   }
   return 'border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500'
 }

@@ -24,7 +24,7 @@
             step="0.01"
             min="0"
             inputmode="decimal"
-            class="w-28 px-3 py-2 text-right text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="w-28 px-3 py-2 text-right text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <span class="text-xs text-gray-500 dark:text-gray-400">EGP</span>
         </div>

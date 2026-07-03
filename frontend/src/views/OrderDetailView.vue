@@ -11,7 +11,7 @@
       <p class="text-red-600 dark:text-red-400 text-lg mb-4">{{ error }}</p>
       <button
         @click="loadOrder()"
-        class="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 mr-2"
+        class="bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 mr-2"
       >
         Retry
       </button>
@@ -26,7 +26,7 @@
       <p class="text-lg mb-4">Order not found</p>
       <button
         @click="loadOrder()"
-        class="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 mr-2"
+        class="bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 mr-2"
       >
         Retry
       </button>
@@ -50,20 +50,20 @@
             <h1 class="text-3xl font-bold text-gray-900 dark:text-white">{{ currentOrder?.restaurant_name || 'Unknown Restaurant' }}</h1>
             <p class="text-gray-600 dark:text-gray-400 mt-2 flex items-center gap-2">
               Code:
-              <span class="font-mono font-semibold text-blue-600 dark:text-blue-400">{{ currentOrder?.code || 'N/A' }}</span>
+              <span class="font-mono font-semibold text-indigo-600 dark:text-indigo-400">{{ currentOrder?.code || 'N/A' }}</span>
               <button
                 @click="copyCode"
                 class="text-xs px-1.5 py-0.5 rounded border transition-colors"
                 :class="codeCopied
                   ? 'border-green-400 text-green-600 dark:text-green-400'
-                  : 'border-gray-300 dark:border-gray-600 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-400'"
+                  : 'border-gray-300 dark:border-gray-600 text-gray-400 hover:text-indigo-600 dark:hover:text-blue-400 hover:border-blue-400'"
               >{{ codeCopied ? '✓ Copied' : 'Copy' }}</button>
             </p>
             <p class="text-gray-600 dark:text-gray-400">Collector: <span class="font-semibold">{{ currentOrder?.collector_name || 'N/A' }}</span></p>
             <p v-if="currentOrder?.cutoff_time" class="text-gray-600 dark:text-gray-400">Cutoff: <span class="font-semibold">{{ formatCutoffTime(currentOrder.cutoff_time) }}</span></p>
             <p v-if="currentOrder?.assigned_users_details && currentOrder.assigned_users_details.length > 0" class="text-gray-600 dark:text-gray-400 mt-2">
               <span class="font-semibold">Assigned to:</span> 
-              <span class="text-blue-600 dark:text-blue-400">{{ currentOrder.assigned_users_details.map(u => u.username).join(', ') }}</span>
+              <span class="text-indigo-600 dark:text-indigo-400">{{ currentOrder.assigned_users_details.map(u => u.username).join(', ') }}</span>
             </p>
             <p v-if="currentOrder?.is_private" class="text-xs text-gray-500 dark:text-gray-400 mt-1">🔒 Private Order</p>
           </div>
@@ -83,8 +83,8 @@
           <!-- Assigned Users Notice -->
           <div v-if="currentOrder?.assigned_users_details && currentOrder.assigned_users_details.length > 0" class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
             <p class="text-sm font-medium text-blue-900 dark:text-blue-300 mb-1">👥 Assigned Order</p>
-            <p class="text-xs text-blue-700 dark:text-blue-400">This order is assigned to specific users. Only assigned users can join.</p>
-            <p class="text-xs text-blue-600 dark:text-blue-400 mt-1">
+            <p class="text-xs text-blue-700 dark:text-indigo-400">This order is assigned to specific users. Only assigned users can join.</p>
+            <p class="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
               Assigned to: {{ currentOrder.assigned_users_details.map(u => u.username).join(', ') }}
             </p>
           </div>
@@ -172,7 +172,7 @@
                         :key="item.id"
                         type="button"
                         @mousedown.prevent="selectMenuPickerItem(item)"
-                        class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 dark:hover:bg-gray-700 flex items-center gap-3"
+                        class="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 dark:hover:bg-gray-700 flex items-center gap-3"
                         :class="selectedMenuItem === item.id ? 'bg-blue-50 dark:bg-gray-700 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-800 dark:text-gray-100'"
                       >
                         <!-- Thumbnail -->
@@ -237,7 +237,7 @@
                 <button
                   @click="addMenuItem"
                   :disabled="!selectedMenuItem || !itemQuantity"
-                  class="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50"
+                  class="bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50"
                 >
                   Add
                 </button>
@@ -311,13 +311,13 @@
                 :key="item.id"
                 :class="[
                   'flex justify-between items-center p-3 border rounded',
-                  item.user === authStore.user?.id ? 'border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700'
+                  item.user === authStore.user?.id ? 'border-blue-300 dark:border-indigo-600 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700'
                 ]"
               >
                 <div class="flex-1">
                   <div class="flex items-center space-x-2">
                     <p class="font-medium dark:text-white">{{ item.item_name }}</p>
-                    <span v-if="item.user === authStore.user?.id" class="text-xs bg-blue-600 dark:bg-blue-500 text-white px-2 py-0.5 rounded">
+                    <span v-if="item.user === authStore.user?.id" class="text-xs bg-indigo-600 dark:bg-indigo-500 text-white px-2 py-0.5 rounded">
                       Your Item
                     </span>
                   </div>
@@ -505,14 +505,14 @@
                   <select
                     v-model="selectedUsers"
                     multiple
-                    class="w-full text-sm px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                    class="w-full text-sm px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
                     size="4"
                   >
                     <option v-for="user in allUsers" :key="user.id" :value="user.id">
                       {{ user.username }}
                     </option>
                   </select>
-                  <p v-if="selectedUsers.length > 0" class="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  <p v-if="selectedUsers.length > 0" class="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
                     {{ selectedUsers.length }} selected
                   </p>
                   
@@ -527,7 +527,7 @@
                           type="number"
                           min="1"
                           placeholder="e.g., 2"
-                          class="w-full text-sm px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+                          class="w-full text-sm px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
                         />
                       </div>
                       <div>
@@ -538,7 +538,7 @@
                           step="0.01"
                           min="0"
                           placeholder="e.g., 500"
-                          class="w-full text-sm px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+                          class="w-full text-sm px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
                         />
                       </div>
                       <p v-if="assignmentItems && assignmentTotalCost && selectedUsers.length > 0" class="text-xs text-green-600 dark:text-green-400 mt-1">
@@ -550,7 +550,7 @@
                   <button
                     @click="updateAssignedUsers"
                     :disabled="loading || (assignmentItems && !assignmentTotalCost) || (assignmentTotalCost && !assignmentItems)"
-                    class="w-full text-xs bg-blue-600 dark:bg-blue-500 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 mt-3"
+                    class="w-full text-xs bg-indigo-600 dark:bg-indigo-500 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 mt-3"
                   >
                     {{ loading ? 'Saving...' : 'Save Assignment' }}
                   </button>
@@ -645,7 +645,7 @@
                     <button
                       v-if="!payment.is_paid && currentOrder?.instapay_link && payment.user === authStore.user?.id"
                       @click="openInstapay"
-                      class="mt-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline"
+                      class="mt-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-blue-300 underline"
                     >
                       Pay via Instapay
                     </button>
@@ -732,7 +732,7 @@
                 />
                 <button
                   @click="copyInstapayLink"
-                  class="bg-blue-600 dark:bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 dark:hover:bg-blue-600"
+                  class="bg-indigo-600 dark:bg-indigo-500 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700 dark:hover:bg-indigo-600"
                 >
                   Copy
                 </button>
@@ -761,14 +761,14 @@
                 v-if="currentOrder?.collector_instapay_link"
                 :href="currentOrder.collector_instapay_link"
                 target="_blank"
-                class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline text-sm"
+                class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-blue-300 underline text-sm"
               >
                 {{ currentOrder.collector_instapay_link }}
               </a>
               <button
                 v-if="currentOrder?.collector_instapay_link"
                 @click="copyCollectorInstapayLink"
-                class="mt-2 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 text-sm"
+                class="mt-2 px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 text-sm"
               >
                 Copy Link
               </button>
@@ -854,7 +854,7 @@
         <div class="flex space-x-2">
           <button
             @click="handleAddToMenu"
-            class="flex-1 bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600"
+            class="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600"
           >
             Yes, Add to Menu
           </button>
@@ -883,7 +883,7 @@
         <div class="flex space-x-2">
           <button
             @click="handleUpdatePrice"
-            class="flex-1 bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600"
+            class="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600"
           >
             Yes, Update Price
           </button>
@@ -1071,13 +1071,13 @@ function formatPrice(value) {
   return isNaN(num) ? '0.00' : num.toFixed(2)
 }
 
-// Helper function to format cutoff time in GMT+2
+// Format cutoff time in Egypt time. The timestamp from the API is timezone-
+// aware, so toLocaleString with an explicit timeZone is the whole conversion —
+// the old manual +2h on top of it double-shifted the display (3 PM showed as
+// 5 PM here and, with the matching backend bug, 1 PM in share messages).
 function formatCutoffTime(dateString) {
   if (!dateString) return 'N/A'
-  const date = new Date(dateString)
-  // Convert UTC to GMT+2 (Egypt timezone)
-  const gmt2Date = new Date(date.getTime() + (2 * 60 * 60 * 1000))
-  return gmt2Date.toLocaleString('en-US', {
+  return new Date(dateString).toLocaleString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

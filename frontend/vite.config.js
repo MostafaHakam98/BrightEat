@@ -29,7 +29,7 @@ export default defineConfig({
         name: 'OrderQ',
         short_name: 'OrderQ',
         description: 'OrderQ - Restaurant Order Management System',
-        theme_color: '#2563eb',
+        theme_color: '#4f46e5',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait-primary',

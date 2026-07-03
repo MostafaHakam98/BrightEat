@@ -51,18 +51,9 @@
                 class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors"
                 active-class="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"
               >
-                🎡 Wheel
+                Wheel
               </router-link>
             </div>
-
-            <!-- Language toggle -->
-            <button
-              @click="toggleLocale"
-              class="px-2 py-1.5 rounded-md text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              :aria-label="$t('nav.language')"
-            >
-              {{ $t('nav.language') }}
-            </button>
 
             <!-- Theme toggle -->
             <button
@@ -194,7 +185,7 @@
 
               <SidebarLink to="/" :exact="true" icon="home" @click="sidebarOpen = false">{{ $t('nav.home') }}</SidebarLink>
               <SidebarLink to="/orders" icon="orders" @click="sidebarOpen = false">{{ $t('nav.orders') }}</SidebarLink>
-              <SidebarLink to="/wheel" icon="wheel" @click="sidebarOpen = false">🎡 {{ $t('nav.wheel') }}</SidebarLink>
+              <SidebarLink to="/wheel" icon="wheel" @click="sidebarOpen = false">{{ $t('nav.wheel') }}</SidebarLink>
               <SidebarLink to="/reports" icon="reports" @click="sidebarOpen = false">{{ $t('nav.reports') }}</SidebarLink>
               <SidebarLink to="/pending-payments" icon="payments" @click="sidebarOpen = false">{{ $t('nav.pendingPayments') }}</SidebarLink>
               <SidebarLink to="/recommendations" icon="feedback" @click="sidebarOpen = false">{{ $t('nav.feedback') }}</SidebarLink>
@@ -252,8 +243,6 @@ import { RouterLink } from 'vue-router'
 import ToastContainer from './components/ToastContainer.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import { useToast } from './composables/useToast'
-import { useI18n } from 'vue-i18n'
-import { applyLocale } from './i18n'
 import api from './api'
 
 const authStore = useAuthStore()
@@ -262,10 +251,6 @@ const notifStore = useNotificationsStore()
 const router = useRouter()
 const sidebarOpen = ref(false)
 
-const { locale } = useI18n()
-function toggleLocale() {
-  applyLocale(locale.value === 'ar' ? 'en' : 'ar')
-}
 
 // Bell
 const bellOpen = ref(false)

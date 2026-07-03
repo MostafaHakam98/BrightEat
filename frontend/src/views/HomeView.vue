@@ -26,7 +26,7 @@
               type="text"
               autocomplete="off"
               placeholder="Search restaurant…"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
             />
             <ul
               v-if="restaurantOpen && filteredRestaurants.length"
@@ -36,7 +36,7 @@
                 v-for="r in filteredRestaurants"
                 :key="r.id"
                 @mousedown.prevent="selectRestaurant(r)"
-                class="px-3 py-2 cursor-pointer text-sm text-gray-800 dark:text-gray-100 hover:bg-blue-50 dark:hover:bg-gray-600"
+                class="px-3 py-2 cursor-pointer text-sm text-gray-800 dark:text-gray-100 hover:bg-indigo-50 dark:hover:bg-gray-600"
               >{{ r.name }}</li>
             </ul>
           </div>
@@ -51,7 +51,7 @@
               v-model="newOrder.menu"
               :required="availableMenus.length > 0"
               :disabled="!newOrder.restaurant || availableMenus.length === 0"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed dark:bg-gray-700 dark:text-white"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed dark:bg-gray-700 dark:text-white"
             >
               <option :value="null">
                 {{ availableMenus.length === 0 ? 'No menus available for this restaurant' : 'Select a menu' }}
@@ -68,7 +68,7 @@
             <input
               v-model="newOrder.cutoff_time"
               type="datetime-local"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
             />
           </div>
 
@@ -78,7 +78,7 @@
             <select
               v-model="selectedPresetId"
               @change="applyPreset"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
             >
               <option :value="null">— Custom / No Preset —</option>
               <option v-for="p in ordersStore.feePresets" :key="p.id" :value="p.id">
@@ -92,7 +92,7 @@
             <button
               type="button"
               @click="showFeeFields = !showFeeFields"
-              class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
             >
               {{ showFeeFields ? 'Hide fee details ▲' : 'Edit fee details ▼' }}
             </button>
@@ -129,7 +129,7 @@
               v-model="newOrder.is_private"
               type="checkbox"
               id="is_private"
-              class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
             />
             <label for="is_private" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
               Make this order private (only participants can see it)
@@ -155,7 +155,7 @@
               type="text"
               placeholder="Enter order code"
               required
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
             />
           </div>
           <button
@@ -199,7 +199,7 @@
                   <span :class="{
                     'text-green-600 dark:text-green-400': order.status === 'OPEN',
                     'text-yellow-600 dark:text-yellow-400': order.status === 'LOCKED',
-                    'text-blue-600 dark:text-blue-400': order.status === 'ORDERED',
+                    'text-indigo-600 dark:text-indigo-400': order.status === 'ORDERED',
                     'text-gray-600 dark:text-gray-400': order.status === 'CLOSED',
                   }">
                     {{ order.status }}

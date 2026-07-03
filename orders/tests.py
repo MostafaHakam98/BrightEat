@@ -610,3 +610,35 @@ class RetentionTest(TestCase):
         self.assertEqual(result['audit_logs_deleted'], 1)
         self.assertTrue(Notification.objects.filter(id=fresh_n.id).exists())
         self.assertTrue(AuditLog.objects.filter(id=fresh_a.id).exists())
+
+
+class ShareMessageCutoffTest(TestCase):
+    """Regression: cutoff in share_message must render in Egypt time.
+    Historically pytz was missing so a hardcoded +2h fallback ran — wrong in
+    summer (Egypt DST = UTC+3) and users saw 3:00 PM turn into 1:00/2:00 PM."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.collector = make_user('collector')
+        self.restaurant = Restaurant.objects.create(name='R', created_by=self.collector)
+
+    def test_share_message_renders_cairo_time(self):
+        token = get_token(self.client, 'collector')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        # Naive local datetime exactly as the datetime-local input sends it
+        res = self.client.post('/api/orders/', {
+            'restaurant': self.restaurant.id,
+            'cutoff_time': '2030-07-15T15:00',
+        }, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertIn('03:00 PM', res.data['share_message'])
+
+        # Winter date too (no DST): still 3 PM
+        res = self.client.post('/api/orders/', {
+            'restaurant': self.restaurant.id,
+            'cutoff_time': '2030-01-15T15:00',
+        }, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertIn('03:00 PM', res.data['share_message'])

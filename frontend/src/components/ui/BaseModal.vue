@@ -17,7 +17,7 @@
           <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{{ title }}</h3>
             <button
-              class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               aria-label="Close dialog"
               @click="$emit('close')"
             >

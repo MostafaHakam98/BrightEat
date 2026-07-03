@@ -3,7 +3,7 @@
     <div class="mb-6">
       <button
         @click="$router.push('/restaurants')"
-        class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 mb-4"
+        class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-blue-300 mb-4"
       >
         ← Back to Restaurants
       </button>
@@ -83,7 +83,7 @@
             </h2>
             <button
               @click="showCreateItemModal = true"
-              class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 shrink-0"
+              class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 shrink-0"
             >
               + Add Item
             </button>
@@ -95,7 +95,7 @@
               v-model="itemSearch"
               type="text"
               placeholder="Search items…"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
             />
           </div>
 
@@ -133,7 +133,7 @@
                     <h3 class="font-semibold dark:text-white">{{ item.name }}</h3>
                     <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">{{ item.description || '' }}</p>
                     <div class="flex items-center space-x-4 mt-2">
-                      <span class="font-bold text-blue-600 dark:text-blue-400">{{ item.price }} EGP</span>
+                      <span class="font-bold text-indigo-600 dark:text-indigo-400">{{ item.price }} EGP</span>
                       <span
                         :class="[
                           'text-xs px-2 py-1 rounded',
@@ -278,7 +278,7 @@
             <button
               type="submit"
               :disabled="savingItem"
-              class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              class="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-50"
             >
               {{ savingItem ? 'Saving...' : (editingItem ? 'Update' : 'Create') }}
             </button>

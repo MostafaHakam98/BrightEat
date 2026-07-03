@@ -2,7 +2,7 @@
   <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 py-12">
     <!-- Loading -->
     <div v-if="loading" class="text-center">
-      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
       <p class="text-gray-600 dark:text-gray-400">Loading order...</p>
     </div>
 
@@ -14,7 +14,7 @@
         <p class="text-gray-600 dark:text-gray-400 mb-6">{{ error }}</p>
         <router-link
           to="/"
-          class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-medium"
+          class="inline-block bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 font-medium"
         >
           Go Home
         </router-link>
@@ -88,7 +88,7 @@
           <!-- CTA button -->
           <button
             @click="joinOrder"
-            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors"
+            class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-colors"
           >
             {{ order.status === 'OPEN' ? '→ Join & Add Items' : '→ View Order' }}
           </button>

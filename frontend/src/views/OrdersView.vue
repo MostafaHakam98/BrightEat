@@ -42,7 +42,7 @@
           <span :class="{
             'text-green-600 dark:text-green-400': order.status === 'OPEN',
             'text-yellow-600 dark:text-yellow-400': order.status === 'LOCKED',
-            'text-blue-600 dark:text-blue-400': order.status === 'ORDERED',
+            'text-indigo-600 dark:text-indigo-400': order.status === 'ORDERED',
             'text-gray-600 dark:text-gray-400': order.status === 'CLOSED',
           }">
             {{ order.status }}

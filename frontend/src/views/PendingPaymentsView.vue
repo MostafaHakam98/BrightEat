@@ -39,7 +39,7 @@
                 <p class="text-sm text-gray-600 dark:text-gray-400">Status:
                   <span :class="{
                     'text-yellow-600 dark:text-yellow-400': payment.order_status === 'LOCKED',
-                    'text-blue-600 dark:text-blue-400': payment.order_status === 'ORDERED',
+                    'text-indigo-600 dark:text-indigo-400': payment.order_status === 'ORDERED',
                     'text-gray-600 dark:text-gray-400': payment.order_status === 'CLOSED',
                   }">
                     {{ payment.order_status }}
@@ -55,14 +55,14 @@
                     :href="payment.collector_instapay_link"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                    class="inline-flex items-center gap-1 text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
                   >
                     Open Instapay Link ↗
                   </a>
                   <div v-if="payment.collector_instapay_qr_code_url" class="mt-2">
                     <button
                       @click="toggleQR(payment.payment_id)"
-                      class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                      class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
                     >
                       {{ expandedQR === payment.payment_id ? 'Hide QR Code' : 'Show QR Code' }}
                     </button>
@@ -78,7 +78,7 @@
               <div class="flex flex-col space-y-2 ml-4">
                 <router-link
                   :to="`/orders/${payment.order_code}`"
-                  class="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 text-sm text-center"
+                  class="bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 text-sm text-center"
                 >
                   View Order
                 </router-link>
@@ -129,7 +129,7 @@
                 <p class="text-sm text-gray-600 dark:text-gray-400">Status: 
                   <span :class="{
                     'text-yellow-600 dark:text-yellow-400': payment.order_status === 'LOCKED',
-                    'text-blue-600 dark:text-blue-400': payment.order_status === 'ORDERED',
+                    'text-indigo-600 dark:text-indigo-400': payment.order_status === 'ORDERED',
                     'text-gray-600 dark:text-gray-400': payment.order_status === 'CLOSED',
                   }">
                     {{ payment.order_status }}
@@ -150,7 +150,7 @@
                     <button
                       v-if="payment.proof_image_url"
                       type="button"
-                      class="shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      class="shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       aria-label="View payment proof"
                       @click="openProofModal(payment)"
                     >
@@ -189,7 +189,7 @@
               <div class="flex flex-col space-y-2 ml-4">
                 <router-link
                   :to="`/orders/${payment.order_code}`"
-                  class="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 text-sm text-center"
+                  class="bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 text-sm text-center"
                 >
                   View Order
                 </router-link>
