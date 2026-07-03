@@ -127,7 +127,17 @@ function formatCutoff(dt) {
   return new Date(dt).toLocaleString('en-EG', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-function joinOrder() {
+const joining = ref(false)
+
+async function joinOrder() {
+  // Actually register participation (roster + collector notification) before
+  // navigating — previously "join" was only a redirect and you stayed
+  // invisible until you added an item.
+  if (order.value.status === 'OPEN' && !joining.value) {
+    joining.value = true
+    await ordersStore.joinOrder(order.value.id)
+    joining.value = false
+  }
   router.push(`/orders/${order.value.code}`)
 }
 

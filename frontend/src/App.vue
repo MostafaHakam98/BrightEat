@@ -242,6 +242,7 @@ import { useNotificationsStore } from './stores/notifications'
 import { RouterLink } from 'vue-router'
 import ToastContainer from './components/ToastContainer.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import { useToast } from './composables/useToast'
 import api from './api'
 
 const authStore = useAuthStore()
@@ -280,8 +281,27 @@ function handleBellOutsideClick(e) {
   if (bellRef.value && !bellRef.value.contains(e.target)) bellOpen.value = false
 }
 
-// Unread count poll every 60 s
+// Live notifications over WebSocket, with a 60 s unread-count poll as fallback
 let notifPollTimer = null
+let offNotification = null
+const toast = useToast()
+
+function startLiveNotifications() {
+  notifStore.connectLive()
+  if (!offNotification) {
+    offNotification = notifStore.onNotification((n) => {
+      toast.info(n.message)
+      if (n.notification_type === 'payment_due' || n.notification_type === 'payment_received') {
+        refreshTabTitle()
+      }
+    })
+  }
+}
+
+function stopLiveNotifications() {
+  notifStore.disconnectLive()
+  if (offNotification) { offNotification(); offNotification = null }
+}
 
 // Close sidebar on Escape
 function handleKey(e) {
@@ -298,6 +318,7 @@ onMounted(() => {
   if (authStore.isAuthenticated) {
     notifStore.fetchUnreadCount()
     notifPollTimer = setInterval(() => notifStore.fetchUnreadCount(), 60_000)
+    startLiveNotifications()
   }
 })
 onUnmounted(() => {
@@ -305,6 +326,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKey)
   document.removeEventListener('mousedown', handleBellOutsideClick)
   if (notifPollTimer) clearInterval(notifPollTimer)
+  stopLiveNotifications()
 })
 
 async function refreshTabTitle() {
@@ -323,9 +345,11 @@ watch(() => authStore.isAuthenticated, (auth) => {
     refreshTabTitle()
     notifStore.fetchUnreadCount()
     notifPollTimer = setInterval(() => notifStore.fetchUnreadCount(), 60_000)
+    startLiveNotifications()
   } else {
     document.title = 'OrderQ'
     if (notifPollTimer) { clearInterval(notifPollTimer); notifPollTimer = null }
+    stopLiveNotifications()
   }
 })
 

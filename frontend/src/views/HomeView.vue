@@ -251,6 +251,7 @@ import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
 import { useAuthStore } from '../stores/auth'
+import { useNotificationsStore } from '../stores/notifications'
 import { formatCountdown, useTick } from '../composables/useCountdown'
 import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
@@ -389,6 +390,14 @@ function handleOutsideClick(e) {
 }
 onMounted(() => document.addEventListener('mousedown', handleOutsideClick))
 onBeforeUnmount(() => document.removeEventListener('mousedown', handleOutsideClick))
+
+// Keep "Active Orders" live: refetch when any order is created/updated elsewhere
+const notifStore = useNotificationsStore()
+let offOrderEvents = null
+onMounted(() => {
+  offOrderEvents = notifStore.onOrderEvent(() => ordersStore.fetchOrders())
+})
+onBeforeUnmount(() => { if (offOrderEvents) offOrderEvents() })
 
 onMounted(async () => {
   loadingOrders.value = true

@@ -99,9 +99,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
+import { useNotificationsStore } from '../stores/notifications'
 import { formatCountdown, useTick } from '../composables/useCountdown'
 import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
@@ -165,10 +166,16 @@ async function markAsPaid(paymentId, orderId) {
   }
 }
 
+// Keep the list live: refetch when any order is created/updated elsewhere
+const notifStore = useNotificationsStore()
+let offOrderEvents = null
+
 onMounted(async () => {
   await fetchPendingPayments()
   fetchOrders()
+  offOrderEvents = notifStore.onOrderEvent(() => fetchOrders())
 })
+onBeforeUnmount(() => { if (offOrderEvents) offOrderEvents() })
 
 async function fetchOrders() {
   loading.value = true

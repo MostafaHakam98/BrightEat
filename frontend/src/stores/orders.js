@@ -23,19 +23,25 @@ export const useOrdersStore = defineStore('orders', () => {
 
   async function fetchOrderByCode(code) {
     try {
-      console.log('Fetching order by code:', code)
       const response = await api.get('/orders/by_code/', { params: { code } })
-      console.log('Order response:', response.data)
       currentOrder.value = response.data
       return { success: true, data: response.data }
     } catch (error) {
-      console.error('Error fetching order:', error)
-      console.error('Error response:', error.response)
       currentOrder.value = null
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: error.response?.data || { detail: error.message || 'Failed to fetch order' }
       }
+    }
+  }
+
+  async function joinOrder(orderId) {
+    try {
+      const response = await api.post(`/orders/${orderId}/join/`)
+      currentOrder.value = response.data
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
     }
   }
 
@@ -144,9 +150,11 @@ export const useOrdersStore = defineStore('orders', () => {
   async function fetchMenus(restaurantId) {
     try {
       const response = await api.get('/menus/', { params: { restaurant: restaurantId } })
-      const menus = response.data.results || response.data
-      menus.value = menus
-      return { success: true, data: menus }
+      // Don't shadow the store ref with a local `menus` — that silently
+      // left the store state empty.
+      const data = response.data.results || response.data
+      menus.value = data
+      return { success: true, data }
     } catch (error) {
       return { success: false, error: error.response?.data }
     }
@@ -342,6 +350,7 @@ export const useOrdersStore = defineStore('orders', () => {
     feePresets,
     fetchOrders,
     fetchOrderByCode,
+    joinOrder,
     addRestaurantFromTalabat,
     syncRestaurantMenu,
     pollTaskStatus,

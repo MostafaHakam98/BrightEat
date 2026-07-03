@@ -983,15 +983,7 @@ const availableMenus = ref([])
 const selectedMenuForPrompt = ref(null)
 
 // Helper to get order from either computed or store directly
-const order = computed(() => {
-  const current = ordersStore.currentOrder
-  if (current) {
-    console.log('Computed order exists:', !!current, 'Keys:', Object.keys(current))
-  } else {
-    console.log('Computed order is null')
-  }
-  return current
-})
+const order = computed(() => ordersStore.currentOrder)
 
 // Always use this to get the order - it falls back to store if computed is null
 const currentOrder = computed(() => {
@@ -1098,9 +1090,7 @@ async function loadOrder() {
   const code = route.params.code.toUpperCase()
   
   try {
-    console.log('Loading order with code:', code)
     const result = await ordersStore.fetchOrderByCode(code)
-    console.log('Fetch result:', result)
     
     if (!result.success) {
       error.value = result.error?.detail || result.error?.error || 'Order not found'
@@ -1115,9 +1105,6 @@ async function loadOrder() {
       return
     }
     
-    console.log('Order loaded:', ordersStore.currentOrder)
-    console.log('Order keys:', ordersStore.currentOrder ? Object.keys(ordersStore.currentOrder) : 'null')
-    console.log('Order restaurant_name:', ordersStore.currentOrder?.restaurant_name)
     
     // Verify order is set
     if (!ordersStore.currentOrder) {
@@ -1129,23 +1116,18 @@ async function loadOrder() {
     
     // Force reactivity update
     await new Promise(resolve => setTimeout(resolve, 0))
-    console.log('After microtask - Order still exists:', !!ordersStore.currentOrder)
     
     // Fetch menu items for the order's menu
     try {
       // If order has a menu assigned, fetch items from that menu
       if (ordersStore.currentOrder.menu) {
-        console.log('Order has menu:', ordersStore.currentOrder.menu)
         await ordersStore.fetchMenuItems(ordersStore.currentOrder.menu)
-        console.log('Menu items loaded:', ordersStore.menuItems)
       } else {
         // Fallback: fetch menus for the restaurant and use the first one
         await ordersStore.fetchMenus(ordersStore.currentOrder.restaurant)
-        console.log('Menus loaded:', ordersStore.menus)
         
         if (ordersStore.menus.length > 0) {
           await ordersStore.fetchMenuItems(ordersStore.menus[0].id)
-          console.log('Menu items loaded from first menu:', ordersStore.menuItems)
         } else {
           console.warn('No menus found for restaurant')
           ordersStore.menuItems = []
@@ -1193,8 +1175,6 @@ async function loadOrder() {
       
       // Connect to WebSocket for real-time updates
       wsStore.connect(ordersStore.currentOrder.id, (updatedOrder) => {
-        console.log('Received order update via WebSocket:', updatedOrder)
-        console.log('Items in update:', updatedOrder.items?.length || 0)
         
         // Update the order in the store - replace entire object to trigger reactivity
         ordersStore.currentOrder = updatedOrder
