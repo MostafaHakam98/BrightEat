@@ -75,6 +75,70 @@ def enforce_order_cutoffs():
     return {'reminded': reminded, 'auto_locked': locked}
 
 
+@shared_task(name='send_web_push')
+def send_web_push(user_ids, title, body, url='/'):
+    """Best-effort Web Push to every subscription of the given users.
+    Dead subscriptions (404/410 from the push service) are pruned."""
+    from django.conf import settings
+    from .models import PushSubscription
+
+    private_key = getattr(settings, 'WEBPUSH_VAPID_PRIVATE_KEY', '')
+    if not private_key:
+        return {'sent': 0, 'skipped': 'vapid_not_configured'}
+
+    import json as jsonlib
+    from pywebpush import webpush, WebPushException
+
+    payload = jsonlib.dumps({'title': title, 'body': body, 'url': url})
+    claims_email = getattr(settings, 'WEBPUSH_VAPID_CLAIMS_EMAIL', 'admin@example.com')
+    sent = pruned = 0
+
+    for sub in PushSubscription.objects.filter(user_id__in=user_ids):
+        try:
+            webpush(
+                subscription_info={
+                    'endpoint': sub.endpoint,
+                    'keys': {'p256dh': sub.p256dh, 'auth': sub.auth},
+                },
+                data=payload,
+                vapid_private_key=private_key,
+                vapid_claims={'sub': f'mailto:{claims_email}'},
+            )
+            sent += 1
+        except WebPushException as exc:
+            status_code = getattr(exc.response, 'status_code', None)
+            if status_code in (404, 410):
+                sub.delete()
+                pruned += 1
+            else:
+                logger.warning('Web push failed for %s: %s', sub.user_id, exc)
+        except Exception as exc:
+            logger.warning('Web push error for %s: %s', sub.user_id, exc)
+
+    return {'sent': sent, 'pruned': pruned}
+
+
+@shared_task(name='purge_old_records')
+def purge_old_records():
+    """Daily retention sweep: notifications and audit logs grow unbounded otherwise."""
+    from django.conf import settings
+    from .models import AuditLog, Notification
+
+    now = timezone.now()
+    notif_days = getattr(settings, 'NOTIFICATION_RETENTION_DAYS', 90)
+    audit_days = getattr(settings, 'AUDIT_LOG_RETENTION_DAYS', 365)
+
+    notif_deleted, _ = Notification.objects.filter(
+        created_at__lt=now - timedelta(days=notif_days)).delete()
+    audit_deleted, _ = AuditLog.objects.filter(
+        created_at__lt=now - timedelta(days=audit_days)).delete()
+
+    if notif_deleted or audit_deleted:
+        logger.info('Retention sweep: %d notifications, %d audit logs deleted',
+                    notif_deleted, audit_deleted)
+    return {'notifications_deleted': notif_deleted, 'audit_logs_deleted': audit_deleted}
+
+
 @shared_task(name='send_payment_reminders')
 def send_payment_reminders():
     """Runs daily via beat. Nags every debtor with an unpaid payment on a

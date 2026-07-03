@@ -3,7 +3,6 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.utils import timezone as tz
-from datetime import timedelta
 from .models import (
     User, Restaurant, Menu, MenuItem, CollectionOrder,
     OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification
@@ -380,7 +379,9 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
             'user_name': p.user.username,
             'amount': float(p.amount),
             'is_paid': p.is_paid,
-            'paid_at': p.paid_at.isoformat() if p.paid_at else None
+            'paid_at': p.paid_at.isoformat() if p.paid_at else None,
+            'proof_status': p.proof_status,
+            'proof_image_url': p.proof_image.url if p.proof_image else None,
         } for p in payments]
     
     def get_total_items_cost(self, obj):
@@ -416,22 +417,9 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         # Format cutoff time in GMT+2 (Egypt timezone)
         if obj.cutoff_time:
-            utc_time = obj.cutoff_time
-            if tz.is_aware(utc_time):
-                # Convert to Egypt timezone (GMT+2)
-                try:
-                    import pytz
-                    egypt_tz = pytz.timezone('Africa/Cairo')
-                    cutoff_local = utc_time.astimezone(egypt_tz)
-                    cutoff_str = cutoff_local.strftime('%I:%M %p')
-                except (ImportError, Exception):
-                    # Fallback: add 2 hours manually if pytz not available
-                    cutoff_local = utc_time + timedelta(hours=2)
-                    cutoff_str = cutoff_local.strftime('%I:%M %p')
-            else:
-                # If naive, assume it's UTC and add 2 hours
-                cutoff_local = utc_time + timedelta(hours=2)
-                cutoff_str = cutoff_local.strftime('%I:%M %p')
+            from zoneinfo import ZoneInfo
+            cutoff_local = obj.cutoff_time.astimezone(ZoneInfo(settings.TIME_ZONE))
+            cutoff_str = cutoff_local.strftime('%I:%M %p')
         else:
             cutoff_str = 'N/A'
         
@@ -453,11 +441,20 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
 class PaymentSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)
     order_code = serializers.CharField(source='order.code', read_only=True)
-    
+    proof_image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Payment
-        fields = ['id', 'order', 'order_code', 'user', 'user_name', 'amount', 'is_paid', 'paid_at', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'order', 'order_code', 'user', 'user_name', 'amount', 'is_paid', 'paid_at',
+                  'proof_status', 'proof_image_url', 'created_at']
+        read_only_fields = ['id', 'proof_status', 'created_at']
+
+    def get_proof_image_url(self, obj):
+        if not obj.proof_image:
+            return None
+        request = self.context.get('request')
+        url = obj.proof_image.url
+        return request.build_absolute_uri(url) if request else url
 
 
 class AuditLogSerializer(serializers.ModelSerializer):

@@ -220,11 +220,22 @@ class OrderItem(models.Model):
 
 class Payment(models.Model):
     """Payment tracking model"""
+    PROOF_STATUS_CHOICES = [
+        ('none', 'No Proof'),
+        ('claimed', 'Proof Uploaded'),
+        ('confirmed', 'Confirmed by Collector'),
+        ('rejected', 'Rejected by Collector'),
+    ]
+
     order = models.ForeignKey(CollectionOrder, on_delete=models.CASCADE, related_name='payments')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments')
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     is_paid = models.BooleanField(default=False)
     paid_at = models.DateTimeField(null=True, blank=True)
+    # Instapay has no API, so "did the money move" is a screenshot the payer
+    # uploads and the collector confirms — better than the pure honor system.
+    proof_image = models.ImageField(upload_to='payment_proofs/', blank=True, null=True)
+    proof_status = models.CharField(max_length=10, choices=PROOF_STATUS_CHOICES, default='none')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -289,6 +300,18 @@ class Recommendation(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.title} ({self.get_category_display()}) - {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class PushSubscription(models.Model):
+    """A browser's Web Push subscription for a user (one row per device/browser)."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='push_subscriptions')
+    endpoint = models.TextField(unique=True)
+    p256dh = models.CharField(max_length=255)
+    auth = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} — {self.endpoint[:40]}…"
 
 
 class Notification(models.Model):

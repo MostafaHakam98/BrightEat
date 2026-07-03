@@ -310,6 +310,34 @@ class RestaurantViewSet(viewsets.ModelViewSet):
             status=status.HTTP_202_ACCEPTED
         )
 
+    @action(detail=True, methods=['get'])
+    def my_usual(self, request, pk=None):
+        """The requester's items from their most recent order at this restaurant —
+        powers one-tap 'Add my usual' when joining a new order."""
+        restaurant = self.get_object()
+        last_item = OrderItem.objects.filter(
+            user=request.user,
+            order__restaurant=restaurant,
+        ).exclude(order__status='DELETED').order_by('-created_at').first()
+        if not last_item:
+            return Response({'items': []})
+
+        items = OrderItem.objects.filter(
+            user=request.user, order=last_item.order,
+        ).select_related('menu_item')
+        usual = []
+        for item in items:
+            # Only replayable items: menu items that still exist and are available
+            if item.menu_item and item.menu_item.is_available:
+                usual.append({
+                    'menu_item': item.menu_item.id,
+                    'name': item.menu_item.name,
+                    'quantity': item.quantity,
+                    'unit_price': str(item.menu_item.price),
+                    'note': item.note,
+                })
+        return Response({'items': usual, 'from_order': last_item.order.code})
+
 
 class MenuViewSet(viewsets.ModelViewSet):
     queryset = Menu.objects.all()
@@ -1484,6 +1512,87 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return queryset
     
     @action(detail=True, methods=['post'])
+    def upload_proof(self, request, pk=None):
+        """Payer attaches an Instapay screenshot; collector gets asked to confirm."""
+        payment = self.get_object()
+        if payment.user != request.user:
+            return Response({'error': 'Only the payer can upload payment proof'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if payment.is_paid:
+            return Response({'error': 'Payment is already marked as paid'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        proof = request.FILES.get('proof')
+        if not proof:
+            return Response({'error': 'Attach the screenshot as a "proof" file field'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        payment.proof_image = proof
+        payment.proof_status = 'claimed'
+        payment.save(update_fields=['proof_image', 'proof_status'])
+
+        order = payment.order
+        notify_users(
+            [order.collector],
+            f'{payment.user.username} uploaded payment proof for {payment.amount} EGP '
+            f'on order {order.code} — please confirm it.',
+            order=order,
+            notification_type='payment_received',
+        )
+        broadcast_order_update(order)
+        return Response(PaymentSerializer(payment, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
+    def confirm_proof(self, request, pk=None):
+        """Collector accepts the proof → payment is settled."""
+        payment = self.get_object()
+        order = payment.order
+        if order.collector != request.user and request.user.role not in ['manager', 'admin']:
+            return Response({'error': 'Only the collector or a manager can confirm proof'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if payment.proof_status != 'claimed':
+            return Response({'error': 'There is no pending proof to confirm'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        payment.proof_status = 'confirmed'
+        payment.is_paid = True
+        payment.paid_at = timezone.now()
+        payment.save(update_fields=['proof_status', 'is_paid', 'paid_at'])
+
+        notify_users(
+            [payment.user],
+            f'Your payment of {payment.amount} EGP for order {order.code} was confirmed.',
+            order=order,
+            notification_type='payment_received',
+        )
+        broadcast_order_update(order)
+        return Response(PaymentSerializer(payment, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
+    def reject_proof(self, request, pk=None):
+        """Collector rejects the proof; payer is told to retry."""
+        payment = self.get_object()
+        order = payment.order
+        if order.collector != request.user and request.user.role not in ['manager', 'admin']:
+            return Response({'error': 'Only the collector or a manager can reject proof'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if payment.proof_status != 'claimed':
+            return Response({'error': 'There is no pending proof to reject'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        payment.proof_status = 'rejected'
+        payment.save(update_fields=['proof_status'])
+
+        notify_users(
+            [payment.user],
+            f'Your payment proof for {payment.amount} EGP on order {order.code} was '
+            f'rejected by {request.user.username} — please check and re-upload.',
+            order=order,
+            notification_type='payment_due',
+        )
+        broadcast_order_update(order)
+        return Response(PaymentSerializer(payment, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
     def mark_paid(self, request, pk=None):
         payment = self.get_object()
         
@@ -1630,6 +1739,48 @@ class HiveSSOView(APIView):
             return Response({'error': 'Account is inactive'}, status=status.HTTP_403_FORBIDDEN)
         refresh = RefreshToken.for_user(user)
         return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})
+
+
+# ── Web Push subscriptions ────────────────────────────────────────────────────
+
+class PushPublicKeyView(APIView):
+    """Expose the VAPID public key so the browser can subscribe."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from django.conf import settings as django_settings
+        key = getattr(django_settings, 'WEBPUSH_VAPID_PUBLIC_KEY', '')
+        return Response({'enabled': bool(key), 'public_key': key or None})
+
+
+class PushSubscribeView(APIView):
+    """Store (or refresh) this browser's push subscription for the user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .models import PushSubscription
+        endpoint = request.data.get('endpoint')
+        keys = request.data.get('keys') or {}
+        if not endpoint or not keys.get('p256dh') or not keys.get('auth'):
+            return Response({'error': 'endpoint and keys.p256dh/keys.auth are required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={'user': request.user, 'p256dh': keys['p256dh'], 'auth': keys['auth']},
+        )
+        return Response({'status': 'subscribed'})
+
+
+class PushUnsubscribeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .models import PushSubscription
+        endpoint = request.data.get('endpoint')
+        if not endpoint:
+            return Response({'error': 'endpoint is required'}, status=status.HTTP_400_BAD_REQUEST)
+        PushSubscription.objects.filter(endpoint=endpoint, user=request.user).delete()
+        return Response({'status': 'unsubscribed'})
 
 
 class TaskStatusView(APIView):

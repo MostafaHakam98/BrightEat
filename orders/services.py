@@ -36,7 +36,30 @@ def notify_users(users, message, order=None, notification_type='order_status', e
         return []
     created = Notification.objects.bulk_create(notifications)
     push_user_notifications(created)
+    _enqueue_web_push(created, order)
     return created
+
+
+def _enqueue_web_push(notifications, order=None):
+    """Fan the same message out to Web Push (fire-and-forget via Celery).
+    No-op unless VAPID keys are configured."""
+    from django.conf import settings
+    if not getattr(settings, 'WEBPUSH_VAPID_PRIVATE_KEY', ''):
+        return
+    try:
+        from .tasks import send_web_push
+        url = f'/orders/{order.code}' if order else '/'
+        # One task per distinct message keeps the payload simple; recipients
+        # of a bulk notify share the same message by construction.
+        send_web_push.delay(
+            [n.user_id for n in notifications],
+            'OrderQ',
+            notifications[0].message,
+            url,
+        )
+    except Exception:
+        # Never let push delivery break the request path.
+        pass
 
 
 def notify_order_participants(order, message, notification_type='order_status', exclude_user=None):

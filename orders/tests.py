@@ -1,8 +1,10 @@
+import tempfile
 from datetime import timedelta
 from decimal import Decimal
 
 from django.core.cache import cache
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -10,9 +12,13 @@ from rest_framework import status
 
 from .models import (
     User, Restaurant, Menu, MenuItem,
-    CollectionOrder, OrderItem, Payment, Notification,
+    CollectionOrder, OrderItem, Payment, Notification, AuditLog, PushSubscription,
 )
-from .tasks import enforce_order_cutoffs, send_payment_reminders
+from .tasks import enforce_order_cutoffs, send_payment_reminders, purge_old_records
+
+# 1×1 transparent GIF — the smallest payload Pillow accepts as an image
+TINY_GIF = (b'GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00ccc,\x00\x00\x00\x00'
+            b'\x01\x00\x01\x00\x00\x02\x02D\x01\x00;')
 
 
 def make_user(username, role='user', password='testpass123'):
@@ -433,3 +439,174 @@ class CutoffEnforcementTest(TestCase):
         # paid → nagging stops
         Payment.objects.filter(id=payment.id).update(is_paid=True)
         self.assertEqual(send_payment_reminders()['reminders_sent'], 0)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class PaymentProofTest(TestCase):
+    """Proof upload → collector confirm/reject flow."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.collector = make_user('collector')
+        self.alice = make_user('alice')
+        self.restaurant = Restaurant.objects.create(name='R', created_by=self.collector)
+        self.order = CollectionOrder.objects.create(
+            restaurant=self.restaurant, collector=self.collector, status='LOCKED')
+        self.payment = Payment.objects.create(
+            order=self.order, user=self.alice, amount=Decimal('80.00'))
+
+    def _auth(self, user):
+        token = get_token(self.client, user.username)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+    def _upload(self):
+        self._auth(self.alice)
+        return self.client.post(
+            f'/api/payments/{self.payment.id}/upload_proof/',
+            {'proof': SimpleUploadedFile('proof.gif', TINY_GIF, content_type='image/gif')},
+            format='multipart')
+
+    def test_upload_proof_notifies_collector(self):
+        res = self._upload()
+        self.assertEqual(res.status_code, 200)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.proof_status, 'claimed')
+        self.assertFalse(self.payment.is_paid)
+        self.assertTrue(Notification.objects.filter(
+            user=self.collector, message__icontains='proof').exists())
+
+    def test_only_payer_can_upload(self):
+        self._auth(self.collector)
+        res = self.client.post(
+            f'/api/payments/{self.payment.id}/upload_proof/',
+            {'proof': SimpleUploadedFile('proof.gif', TINY_GIF, content_type='image/gif')},
+            format='multipart')
+        self.assertEqual(res.status_code, 403)
+
+    def test_confirm_proof_settles_payment(self):
+        self._upload()
+        self._auth(self.collector)
+        res = self.client.post(f'/api/payments/{self.payment.id}/confirm_proof/')
+        self.assertEqual(res.status_code, 200)
+        self.payment.refresh_from_db()
+        self.assertTrue(self.payment.is_paid)
+        self.assertEqual(self.payment.proof_status, 'confirmed')
+        self.assertTrue(Notification.objects.filter(
+            user=self.alice, notification_type='payment_received',
+            message__icontains='confirmed').exists())
+
+    def test_reject_proof_notifies_payer(self):
+        self._upload()
+        self._auth(self.collector)
+        res = self.client.post(f'/api/payments/{self.payment.id}/reject_proof/')
+        self.assertEqual(res.status_code, 200)
+        self.payment.refresh_from_db()
+        self.assertFalse(self.payment.is_paid)
+        self.assertEqual(self.payment.proof_status, 'rejected')
+        self.assertTrue(Notification.objects.filter(
+            user=self.alice, notification_type='payment_due',
+            message__icontains='rejected').exists())
+
+    def test_payer_cannot_confirm_own_proof(self):
+        self._upload()
+        res = self.client.post(f'/api/payments/{self.payment.id}/confirm_proof/')
+        self.assertEqual(res.status_code, 403)
+
+
+class MyUsualTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.alice = make_user('alice')
+        self.restaurant = Restaurant.objects.create(name='R', created_by=self.alice)
+        self.menu = Menu.objects.create(restaurant=self.restaurant, name='M')
+        self.burger = MenuItem.objects.create(menu=self.menu, name='Burger', price=Decimal('50.00'))
+        self.fries = MenuItem.objects.create(menu=self.menu, name='Fries', price=Decimal('20.00'))
+
+    def _auth(self, user):
+        token = get_token(self.client, user.username)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+    def test_returns_items_from_last_order(self):
+        old = CollectionOrder.objects.create(restaurant=self.restaurant, collector=self.alice, status='CLOSED')
+        OrderItem.objects.create(order=old, user=self.alice, menu_item=self.burger,
+                                 quantity=2, unit_price=self.burger.price, note='no pickles')
+        OrderItem.objects.create(order=old, user=self.alice, menu_item=self.fries,
+                                 quantity=1, unit_price=self.fries.price)
+
+        self._auth(self.alice)
+        res = self.client.get(f'/api/restaurants/{self.restaurant.id}/my_usual/')
+        self.assertEqual(res.status_code, 200)
+        names = {i['name']: i for i in res.data['items']}
+        self.assertEqual(set(names), {'Burger', 'Fries'})
+        self.assertEqual(names['Burger']['quantity'], 2)
+        self.assertEqual(names['Burger']['note'], 'no pickles')
+
+    def test_empty_when_no_history(self):
+        self._auth(self.alice)
+        res = self.client.get(f'/api/restaurants/{self.restaurant.id}/my_usual/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['items'], [])
+
+    def test_unavailable_items_excluded(self):
+        old = CollectionOrder.objects.create(restaurant=self.restaurant, collector=self.alice, status='CLOSED')
+        OrderItem.objects.create(order=old, user=self.alice, menu_item=self.burger,
+                                 quantity=1, unit_price=self.burger.price)
+        self.burger.is_available = False
+        self.burger.save()
+        self._auth(self.alice)
+        res = self.client.get(f'/api/restaurants/{self.restaurant.id}/my_usual/')
+        self.assertEqual(res.data['items'], [])
+
+
+class PushSubscriptionTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.alice = make_user('alice')
+        token = get_token(self.client, 'alice')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+    def test_subscribe_and_unsubscribe(self):
+        sub = {'endpoint': 'https://push.example/abc', 'keys': {'p256dh': 'k1', 'auth': 'a1'}}
+        res = self.client.post('/api/push/subscribe/', sub, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(PushSubscription.objects.filter(user=self.alice).count(), 1)
+
+        # Re-subscribing the same endpoint updates, not duplicates
+        self.client.post('/api/push/subscribe/', sub, format='json')
+        self.assertEqual(PushSubscription.objects.count(), 1)
+
+        res = self.client.post('/api/push/unsubscribe/',
+                               {'endpoint': sub['endpoint']}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(PushSubscription.objects.count(), 0)
+
+    def test_public_key_disabled_without_config(self):
+        res = self.client.get('/api/push/public_key/')
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.data['enabled'])
+
+
+class RetentionTest(TestCase):
+    def test_purge_old_records(self):
+        alice = make_user('alice')
+        restaurant = Restaurant.objects.create(name='R', created_by=alice)
+        order = CollectionOrder.objects.create(restaurant=restaurant, collector=alice)
+
+        fresh_n = Notification.objects.create(user=alice, message='fresh')
+        old_n = Notification.objects.create(user=alice, message='old')
+        Notification.objects.filter(id=old_n.id).update(
+            created_at=timezone.now() - timedelta(days=120))
+
+        fresh_a = AuditLog.objects.create(order=order, user=alice, action='created')
+        old_a = AuditLog.objects.create(order=order, user=alice, action='created')
+        AuditLog.objects.filter(id=old_a.id).update(
+            created_at=timezone.now() - timedelta(days=400))
+
+        result = purge_old_records()
+        self.assertEqual(result['notifications_deleted'], 1)
+        self.assertEqual(result['audit_logs_deleted'], 1)
+        self.assertTrue(Notification.objects.filter(id=fresh_n.id).exists())
+        self.assertTrue(AuditLog.objects.filter(id=fresh_a.id).exists())
