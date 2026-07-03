@@ -4,7 +4,6 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../config/app_config.dart';
-import 'api_service.dart';
 
 class WebSocketService {
   WebSocketChannel? _channel;
@@ -46,30 +45,11 @@ class WebSocketService {
         return;
       }
 
-      // Convert http:// to ws:// or https:// to wss://
-      String baseUrl = ApiService.baseUrl;
-      
-      // Remove trailing slash if present
-      if (baseUrl.endsWith('/')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
-      }
-      
-      // Convert protocol
-      String wsUrl;
-      if (baseUrl.startsWith('https://')) {
-        wsUrl = baseUrl.replaceFirst('https://', 'wss://');
-      } else if (baseUrl.startsWith('http://')) {
-        wsUrl = baseUrl.replaceFirst('http://', 'ws://');
-      } else {
-        // If no protocol, assume ws://
-        wsUrl = 'ws://$baseUrl';
-      }
-      
-      // Construct WebSocket URL
-      wsUrl = '$wsUrl/ws/orders/${_currentOrderId}/?token=${Uri.encodeComponent(token)}';
+      // WebSocket routes live at the root (/ws), not under /api
+      final wsUrl =
+          '${AppConfig.wsBaseUrl}/ws/orders/${_currentOrderId}/?token=${Uri.encodeComponent(token)}';
 
       print('🔌 Connecting to WebSocket: $wsUrl');
-      print('🔌 Base URL was: ${ApiService.baseUrl}');
 
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 

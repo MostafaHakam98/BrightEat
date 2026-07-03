@@ -41,7 +41,7 @@
                 :value="restaurant.id"
                 v-model="selectedIds"
                 :disabled="spinning"
-                class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
+                class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
               />
               <span class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 select-none">
                 <span
@@ -110,7 +110,7 @@
           @click="spin"
           :disabled="spinning || selectedRestaurants.length < 2"
           class="px-10 py-3 rounded-full text-lg font-bold text-white shadow-lg transition
-                 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600
+                 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600
                  disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {{ spinning ? 'Spinning...' : 'Spin!' }}

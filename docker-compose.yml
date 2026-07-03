@@ -35,12 +35,14 @@ services:
       - "19992:8000"
     environment:
       - DEBUG=True
+      # dev convenience: auto-create migrations and seed data on boot
+      - RUN_MAKEMIGRATIONS=true
+      - SEED_ON_START=true
       - DB_NAME=orderq
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - DB_HOST=db
       - DB_PORT=5432
-      - SECRET_KEY=django-insecure-g@l$$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$$bda5*bixmkky
       - FRONTEND_URL=https://localhost:19991
       - USE_HTTPS=True
       - CSRF_TRUSTED_ORIGINS=https://localhost:19991,https://127.0.0.1:19991
@@ -73,7 +75,7 @@ services:
     # No exposed ports - accessed through nginx-router
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
       interval: 30s
       timeout: 10s
       retries: 3

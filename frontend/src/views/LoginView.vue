@@ -138,7 +138,10 @@ async function handleLogin() {
   const result = await authStore.login(username.value, password.value)
 
   if (result.success) {
-    router.push('/')
+    // Honor ?next= so invite links land the user on the order they were sent
+    const next = typeof route.query.next === 'string' && route.query.next.startsWith('/')
+      ? route.query.next : '/'
+    router.push(next)
   } else {
     error.value = result.error
   }

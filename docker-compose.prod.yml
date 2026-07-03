@@ -1,25 +1,50 @@
 # Production docker-compose file using pre-built images
-# Usage: docker-compose -f docker-compose.prod.yml up -d
+# Usage: docker compose -f docker-compose.prod.yml up -d
+#
+# Secrets and host-specific values come from .env (never committed).
+# Copy .env.example to .env and fill it in before the first start.
 
 name: orderq
+
+x-backend-env: &backend-env
+  DEBUG: "False"
+  DB_NAME: ${DB_NAME:-orderq}
+  DB_USER: ${DB_USER:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+  DB_HOST: db
+  DB_PORT: "5432"
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/0
+  FLARESOLVERR_URL: http://flaresolverr:8191
+  HIVE_URL: ${HIVE_URL:-}
+  SSO_ALLOWED_EMAIL_DOMAINS: ${SSO_ALLOWED_EMAIL_DOMAINS:-brightskiesinc.com}
+  WEBPUSH_VAPID_PUBLIC_KEY: ${WEBPUSH_VAPID_PUBLIC_KEY:-}
+  WEBPUSH_VAPID_PRIVATE_KEY: ${WEBPUSH_VAPID_PRIVATE_KEY:-}
+  WEBPUSH_VAPID_CLAIMS_EMAIL: ${WEBPUSH_VAPID_CLAIMS_EMAIL:-admin@example.com}
+  SENTRY_DSN: ${SENTRY_DSN:-}
 
 services:
   db:
     image: postgres:15-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: orderq
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${DB_NAME:-orderq}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     healthcheck:
@@ -29,31 +54,28 @@ services:
       retries: 5
 
   backend:
-    image: orderq-backend:latest
+    image: orderq-backend:${IMAGE_TAG:-latest}
     command: /app/start.sh
+    restart: unless-stopped
+    # No source bind-mount: the container runs the code baked into the image,
+    # so a deploy is exactly what was built (media uploads live on a volume).
     volumes:
-      - .:/app
+      - media_data:/app/media
     ports:
       - "19992:8000"
     environment:
-      - DEBUG=False
-      - DB_NAME=orderq
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - DB_HOST=db
-      - DB_PORT=5432
-      - SECRET_KEY=django-insecure-g@l$$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$$bda5*bixmkky
-      - ALLOWED_HOSTS=51.20.151.57,orderq.acai.brightskiesinc.com,localhost,backend
-      - FRONTEND_URL=https://orderq.acai.brightskiesinc.com
-      - USE_HTTPS=True
-      - CSRF_TRUSTED_ORIGINS=https://51.20.151.57:19991,https://orderq.acai.brightskiesinc.com
-      - CORS_ALLOWED_ORIGINS=https://51.20.151.57:19991,https://orderq.acai.brightskiesinc.com
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - FLARESOLVERR_URL=http://flaresolverr:8191
-      - HIVE_URL=https://acai.brightskiesinc.com
+      <<: *backend-env
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS must be set in .env}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL must be set in .env}
+      USE_HTTPS: "True"
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?CSRF_TRUSTED_ORIGINS must be set in .env}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS must be set in .env}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - default
       - hive-network
@@ -66,24 +88,11 @@ services:
         condition: service_started
 
   celery-worker:
-    image: orderq-backend:latest
+    image: orderq-backend:${IMAGE_TAG:-latest}
     command: celery -A OrderQ worker --loglevel=info --concurrency=2
-    volumes:
-      - .:/app
+    restart: unless-stopped
     environment:
-      - DEBUG=False
-      - DB_NAME=orderq
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - DB_HOST=db
-      - DB_PORT=5432
-      - SECRET_KEY=django-insecure-g@l$$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$$bda5*bixmkky
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - FLARESOLVERR_URL=http://flaresolverr:8191
-      - HIVE_URL=https://acai.brightskiesinc.com
+      <<: *backend-env
     networks:
       - default
       - hive-network
@@ -92,25 +101,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
 
   celery-beat:
-    image: orderq-backend:latest
+    image: orderq-backend:${IMAGE_TAG:-latest}
     command: celery -A OrderQ beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
-    volumes:
-      - .:/app
+    restart: unless-stopped
     environment:
-      - DEBUG=False
-      - DB_NAME=orderq
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - DB_HOST=db
-      - DB_PORT=5432
-      - SECRET_KEY=django-insecure-g@l$$t7h!hv)__!=&u5_b%)9hkbmmh7qc=d-!_$$bda5*bixmkky
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      <<: *backend-env
     networks:
       - default
       - hive-network
@@ -121,31 +118,32 @@ services:
         condition: service_healthy
       celery-worker:
         condition: service_started
-    restart: unless-stopped
 
   flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
+    image: ghcr.io/flaresolverr/flaresolverr:v3.3.21
+    restart: unless-stopped
     environment:
       - LOG_LEVEL=info
-    restart: unless-stopped
 
   frontend:
-    image: orderq-frontend:latest
+    image: orderq-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
     depends_on:
       - backend
 
   flutter-pwa:
-    image: orderq-flutter-pwa:latest
+    image: orderq-flutter-pwa:${IMAGE_TAG:-latest}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
   nginx-router:
-    image: nginx:alpine
+    image: nginx:1.27-alpine
+    restart: unless-stopped
     ports:
       - "19991:19991"
     volumes:
@@ -156,15 +154,14 @@ services:
       - frontend
       - flutter-pwa
       - backend
-    restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
+  media_data:
 
 networks:
   default: {}
   hive-network:
     external: true
     name: bsacaiportal_acai-network
-

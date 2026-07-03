@@ -2,18 +2,34 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Backend to proxy /api and /ws to. Dev default is the compose backend;
+// E2E/CI point this at a local uvicorn. preview.proxy inherits server.proxy.
+const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:19992'
+
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    proxy: {
+      '/api': { target: proxyTarget, changeOrigin: true },
+      '/media': { target: proxyTarget, changeOrigin: true },
+      '/ws': { target: proxyTarget, ws: true, changeOrigin: true },
+    },
+  },
   plugins: [
     vue(),
     VitePWA({
+      // Custom SW (src/sw.js) so we can handle Web Push + offline fallback;
+      // it reimplements the same precache/runtime caching generateSW gave us.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'logo.svg'],
       manifest: {
         name: 'OrderQ',
         short_name: 'OrderQ',
         description: 'OrderQ - Restaurant Order Management System',
-        theme_color: '#2563eb',
+        theme_color: '#4f46e5',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait-primary',
@@ -40,32 +56,8 @@ export default defineConfig({
           }
         ]
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'images-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-              }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/.*\/api\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 10,
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          }
-        ]
       },
       devOptions: {
         enabled: true,

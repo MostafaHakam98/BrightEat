@@ -25,26 +25,13 @@ from .serializers import (
 )
 from .utils import format_item_name
 from .websocket_utils import broadcast_order_update, broadcast_new_order
+from .services import (
+    CustomSplitError, lock_order, notify_users,
+    notify_order_participants as _notify_order_participants,
+)
 from rest_framework_simplejwt.tokens import RefreshToken
 
 logger = logging.getLogger(__name__)
-
-
-def _notify_order_participants(order, message, notification_type='order_status', exclude_user=None):
-    """Create an in-app Notification for every participant of an order."""
-    participants = order.get_participants()
-    notifications = []
-    for user in participants:
-        if exclude_user and user == exclude_user:
-            continue
-        notifications.append(Notification(
-            user=user,
-            order=order,
-            notification_type=notification_type,
-            message=message,
-        ))
-    if notifications:
-        Notification.objects.bulk_create(notifications)
 
 
 class HealthCheckView(APIView):
@@ -323,6 +310,34 @@ class RestaurantViewSet(viewsets.ModelViewSet):
             status=status.HTTP_202_ACCEPTED
         )
 
+    @action(detail=True, methods=['get'])
+    def my_usual(self, request, pk=None):
+        """The requester's items from their most recent order at this restaurant —
+        powers one-tap 'Add my usual' when joining a new order."""
+        restaurant = self.get_object()
+        last_item = OrderItem.objects.filter(
+            user=request.user,
+            order__restaurant=restaurant,
+        ).exclude(order__status='DELETED').order_by('-created_at').first()
+        if not last_item:
+            return Response({'items': []})
+
+        items = OrderItem.objects.filter(
+            user=request.user, order=last_item.order,
+        ).select_related('menu_item')
+        usual = []
+        for item in items:
+            # Only replayable items: menu items that still exist and are available
+            if item.menu_item and item.menu_item.is_available:
+                usual.append({
+                    'menu_item': item.menu_item.id,
+                    'name': item.menu_item.name,
+                    'quantity': item.quantity,
+                    'unit_price': str(item.menu_item.price),
+                    'note': item.note,
+                })
+        return Response({'items': usual, 'from_order': last_item.order.code})
+
 
 class MenuViewSet(viewsets.ModelViewSet):
     queryset = Menu.objects.all()
@@ -374,7 +389,7 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
         ).prefetch_related(
             'items__user', 'items__menu_item',
             'payments__user',
-            'assigned_users',
+            'assigned_users', 'joined_users',
         )
 
         if status_filter:
@@ -555,19 +570,11 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        order.status = 'LOCKED'
-        order.locked_at = timezone.now()
-        order.save()
+        try:
+            lock_order(order, actor=request.user, custom_amounts=request.data.get('custom_amounts'))
+        except CustomSplitError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        self._calculate_payments(order)
-
-        AuditLog.objects.create(order=order, user=request.user, action='locked', details={})
-        _notify_order_participants(
-            order,
-            f'Order {order.code} at {order.restaurant.name} has been locked.',
-            exclude_user=request.user,
-        )
-        broadcast_order_update(order)
         return Response(CollectionOrderSerializer(order).data)
     
     @action(detail=True, methods=['post'])
@@ -661,6 +668,46 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
         broadcast_order_update(order)
         return Response(CollectionOrderSerializer(order).data)
     
+    @action(detail=True, methods=['post'])
+    def join(self, request, pk=None):
+        """Explicitly join an order (before adding any items). Adds the user to
+        the roster, tells the collector, and broadcasts the updated order."""
+        order = self.get_object()
+
+        if order.status != 'OPEN':
+            return Response(
+                {'error': 'This order is no longer open'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Assigned (private) orders can only be joined by their assignees
+        if order.assigned_users.exists():
+            if (request.user not in order.assigned_users.all()
+                    and order.collector != request.user
+                    and request.user.role not in ['manager', 'admin']):
+                return Response(
+                    {'error': 'You are not assigned to this order'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        already_joined = order.joined_users.filter(id=request.user.id).exists()
+        if not already_joined:
+            order.joined_users.add(request.user)
+            AuditLog.objects.create(
+                order=order, user=request.user, action='user_joined',
+                details={'username': request.user.username}
+            )
+            if order.collector != request.user:
+                notify_users(
+                    [order.collector],
+                    f'{request.user.username} joined your order {order.code} at {order.restaurant.name}.',
+                    order=order,
+                    notification_type='order_joined',
+                )
+            broadcast_order_update(order)
+
+        return Response(CollectionOrderSerializer(order, context={'request': request}).data)
+
     @action(detail=False, methods=['get'])
     def by_code(self, request):
         code = request.query_params.get('code')
@@ -772,6 +819,8 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
                 'payment_type': 'owed_by_me',
                 'collector_instapay_link': collector.instapay_link or '',
                 'collector_instapay_qr_code_url': qr_url,
+                'proof_status': payment.proof_status,
+                'proof_image_url': request.build_absolute_uri(payment.proof_image.url) if payment.proof_image else None,
             })
         
         return Response(result)
@@ -796,6 +845,8 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
                 'payment_id': payment.id,
                 'order_status': payment.order.status,
                 'payment_type': 'owed_to_me',  # Others owe this to user
+                'proof_status': payment.proof_status,
+                'proof_image_url': request.build_absolute_uri(payment.proof_image.url) if payment.proof_image else None,
             })
         
         return Response(result)
@@ -1107,71 +1158,6 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
             'total_owed_to_user': float(total_owed_to_user),
         })
 
-    def _calculate_payments(self, order):
-        """Calculate payments based on fee split rule"""
-        total_items = order.get_total_items_cost()
-        total_fees = order.delivery_fee + order.tip + order.service_fee
-        participants = order.get_participants()
-        
-        # Delete existing payments
-        Payment.objects.filter(order=order).delete()
-        
-        if order.fee_split_rule == 'collector_pays':
-            # Collector pays all fees
-            for user in participants:
-                user_items_total = sum(
-                    item.total_price for item in order.items.filter(user=user)
-                )
-                payment = Payment.objects.create(
-                    order=order,
-                    user=user,
-                    amount=user_items_total
-                )
-                # Auto-mark collector's payment as paid
-                if user == order.collector:
-                    payment.is_paid = True
-                    payment.paid_at = timezone.now()
-                    payment.save()
-        elif order.fee_split_rule == 'equal':
-            # Split fees equally among participants
-            fee_per_person = total_fees / len(participants) if participants else 0
-            for user in participants:
-                user_items_total = sum(
-                    item.total_price for item in order.items.filter(user=user)
-                )
-                payment = Payment.objects.create(
-                    order=order,
-                    user=user,
-                    amount=user_items_total + fee_per_person
-                )
-                # Auto-mark collector's payment as paid
-                if user == order.collector:
-                    payment.is_paid = True
-                    payment.paid_at = timezone.now()
-                    payment.save()
-        elif order.fee_split_rule == 'proportional':
-            # Split fees proportionally based on item cost
-            for user in participants:
-                user_items_total = sum(
-                    item.total_price for item in order.items.filter(user=user)
-                )
-                if total_items > 0:
-                    user_fee_share = (user_items_total / total_items) * total_fees
-                else:
-                    user_fee_share = 0
-                payment = Payment.objects.create(
-                    order=order,
-                    user=user,
-                    amount=user_items_total + user_fee_share
-                )
-                # Auto-mark collector's payment as paid
-                if user == order.collector:
-                    payment.is_paid = True
-                    payment.paid_at = timezone.now()
-                    payment.save()
-        # Custom split handled separately via API
-
-
 class OrderItemViewSet(viewsets.ModelViewSet):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
@@ -1275,7 +1261,10 @@ class OrderItemViewSet(viewsets.ModelViewSet):
                 'price': float(item.total_price)
             }
         )
-        
+
+        # Adding an item makes you part of the roster (idempotent)
+        order.joined_users.add(user_to_assign)
+
         # Broadcast order update via WebSocket
         order.refresh_from_db()
         broadcast_order_update(order)
@@ -1527,6 +1516,87 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return queryset
     
     @action(detail=True, methods=['post'])
+    def upload_proof(self, request, pk=None):
+        """Payer attaches an Instapay screenshot; collector gets asked to confirm."""
+        payment = self.get_object()
+        if payment.user != request.user:
+            return Response({'error': 'Only the payer can upload payment proof'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if payment.is_paid:
+            return Response({'error': 'Payment is already marked as paid'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        proof = request.FILES.get('proof')
+        if not proof:
+            return Response({'error': 'Attach the screenshot as a "proof" file field'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        payment.proof_image = proof
+        payment.proof_status = 'claimed'
+        payment.save(update_fields=['proof_image', 'proof_status'])
+
+        order = payment.order
+        notify_users(
+            [order.collector],
+            f'{payment.user.username} uploaded payment proof for {payment.amount} EGP '
+            f'on order {order.code} — please confirm it.',
+            order=order,
+            notification_type='payment_received',
+        )
+        broadcast_order_update(order)
+        return Response(PaymentSerializer(payment, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
+    def confirm_proof(self, request, pk=None):
+        """Collector accepts the proof → payment is settled."""
+        payment = self.get_object()
+        order = payment.order
+        if order.collector != request.user and request.user.role not in ['manager', 'admin']:
+            return Response({'error': 'Only the collector or a manager can confirm proof'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if payment.proof_status != 'claimed':
+            return Response({'error': 'There is no pending proof to confirm'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        payment.proof_status = 'confirmed'
+        payment.is_paid = True
+        payment.paid_at = timezone.now()
+        payment.save(update_fields=['proof_status', 'is_paid', 'paid_at'])
+
+        notify_users(
+            [payment.user],
+            f'Your payment of {payment.amount} EGP for order {order.code} was confirmed.',
+            order=order,
+            notification_type='payment_received',
+        )
+        broadcast_order_update(order)
+        return Response(PaymentSerializer(payment, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
+    def reject_proof(self, request, pk=None):
+        """Collector rejects the proof; payer is told to retry."""
+        payment = self.get_object()
+        order = payment.order
+        if order.collector != request.user and request.user.role not in ['manager', 'admin']:
+            return Response({'error': 'Only the collector or a manager can reject proof'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if payment.proof_status != 'claimed':
+            return Response({'error': 'There is no pending proof to reject'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        payment.proof_status = 'rejected'
+        payment.save(update_fields=['proof_status'])
+
+        notify_users(
+            [payment.user],
+            f'Your payment proof for {payment.amount} EGP on order {order.code} was '
+            f'rejected by {request.user.username} — please check and re-upload.',
+            order=order,
+            notification_type='payment_due',
+        )
+        broadcast_order_update(order)
+        return Response(PaymentSerializer(payment, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
     def mark_paid(self, request, pk=None):
         payment = self.get_object()
         
@@ -1540,10 +1610,28 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.is_paid = True
         payment.paid_at = timezone.now()
         payment.save()
-        
+
+        order = payment.order
+        if request.user == payment.user and order.collector != payment.user:
+            notify_users(
+                [order.collector],
+                f'{payment.user.username} marked their payment of {payment.amount} EGP '
+                f'as paid for order {order.code}.',
+                order=order,
+                notification_type='payment_received',
+            )
+        elif request.user != payment.user:
+            notify_users(
+                [payment.user],
+                f'Your payment of {payment.amount} EGP for order {order.code} '
+                f'was confirmed by {request.user.username}.',
+                order=order,
+                notification_type='payment_received',
+            )
+
         # Broadcast order update via WebSocket
-        broadcast_order_update(payment.order)
-        
+        broadcast_order_update(order)
+
         return Response(PaymentSerializer(payment).data)
 
 
@@ -1636,12 +1724,15 @@ class HiveSSOView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        from django.conf import settings as django_settings
         email = (request.data.get('email') or '').lower().strip()
         if not email:
             return Response({'error': 'email is required'}, status=status.HTTP_400_BAD_REQUEST)
-        # Only accept company email addresses
-        if not email.endswith('@brightskiesinc.com'):
-            return Response({'error': 'Only @brightskiesinc.com accounts are allowed'},
+        # Only accept email addresses from the configured domains
+        allowed_domains = getattr(django_settings, 'SSO_ALLOWED_EMAIL_DOMAINS', [])
+        if allowed_domains and not any(email.endswith(f'@{d}') for d in allowed_domains):
+            domains = ', '.join(f'@{d}' for d in allowed_domains)
+            return Response({'error': f'Only {domains} accounts are allowed'},
                             status=status.HTTP_403_FORBIDDEN)
         try:
             user = User.objects.get(email__iexact=email)
@@ -1652,6 +1743,48 @@ class HiveSSOView(APIView):
             return Response({'error': 'Account is inactive'}, status=status.HTTP_403_FORBIDDEN)
         refresh = RefreshToken.for_user(user)
         return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})
+
+
+# ── Web Push subscriptions ────────────────────────────────────────────────────
+
+class PushPublicKeyView(APIView):
+    """Expose the VAPID public key so the browser can subscribe."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from django.conf import settings as django_settings
+        key = getattr(django_settings, 'WEBPUSH_VAPID_PUBLIC_KEY', '')
+        return Response({'enabled': bool(key), 'public_key': key or None})
+
+
+class PushSubscribeView(APIView):
+    """Store (or refresh) this browser's push subscription for the user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .models import PushSubscription
+        endpoint = request.data.get('endpoint')
+        keys = request.data.get('keys') or {}
+        if not endpoint or not keys.get('p256dh') or not keys.get('auth'):
+            return Response({'error': 'endpoint and keys.p256dh/keys.auth are required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={'user': request.user, 'p256dh': keys['p256dh'], 'auth': keys['auth']},
+        )
+        return Response({'status': 'subscribed'})
+
+
+class PushUnsubscribeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .models import PushSubscription
+        endpoint = request.data.get('endpoint')
+        if not endpoint:
+            return Response({'error': 'endpoint is required'}, status=status.HTTP_400_BAD_REQUEST)
+        PushSubscription.objects.filter(endpoint=endpoint, user=request.user).delete()
+        return Response({'status': 'unsubscribed'})
 
 
 class TaskStatusView(APIView):
@@ -1689,7 +1822,12 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user)
+        queryset = Notification.objects.filter(user=self.request.user)
+        if self.action == 'list':
+            # Response stays a plain array (both frontends parse it as one), but
+            # capped so a long-lived account doesn't pull its whole history.
+            queryset = queryset[:100]
+        return queryset
 
     @action(detail=True, methods=['post'], url_path='mark_read')
     def mark_read(self, request, pk=None):

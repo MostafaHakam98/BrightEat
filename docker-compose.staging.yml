@@ -1,0 +1,17 @@
+# Staging override — run the production stack side-by-side on the same host
+# with its own project name, volumes, and ports:
+#
+#   cp .env.example .env.staging   # fill in staging values
+#   make staging-up
+#
+# Staging is reachable on https://<host>:29991 (API on 29992).
+name: orderq-staging
+
+services:
+  backend:
+    ports:
+      - "29992:8000"
+
+  nginx-router:
+    ports:
+      - "29991:19991"

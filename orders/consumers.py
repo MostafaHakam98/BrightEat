@@ -25,15 +25,27 @@ class NotificationsConsumer(AsyncWebsocketConsumer):
             self.group_name,
             self.channel_name
         )
-        
+
+        # Join the user's personal group for targeted notification pushes
+        self.user_group_name = f"user_{self.scope['user'].id}"
+        await self.channel_layer.group_add(
+            self.user_group_name,
+            self.channel_name
+        )
+
         await self.accept()
-    
+
     async def disconnect(self, close_code):
         # Leave notifications group
         await self.channel_layer.group_discard(
             self.group_name,
             self.channel_name
         )
+        if hasattr(self, 'user_group_name'):
+            await self.channel_layer.group_discard(
+                self.user_group_name,
+                self.channel_name
+            )
     
     # Receive message from WebSocket
     async def receive(self, text_data):
@@ -56,6 +68,13 @@ class NotificationsConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type': 'order_update',
             'order': event['order']
+        }))
+
+    async def notification(self, event):
+        """Deliver a personal in-app notification in real time"""
+        await self.send(text_data=json.dumps({
+            'type': 'notification',
+            'notification': event['notification']
         }))
 
 
@@ -149,7 +168,7 @@ class OrderConsumer(AsyncWebsocketConsumer):
             order = CollectionOrder.objects.prefetch_related(
                 Prefetch('items', queryset=OrderItem.objects.select_related('user', 'menu_item').order_by('-created_at')),
                 Prefetch('payments', queryset=Payment.objects.select_related('user').order_by('-created_at')),
-                'assigned_users'
+                'assigned_users', 'joined_users'
             ).select_related('restaurant', 'menu', 'collector').get(id=order_id)
             serializer = CollectionOrderSerializer(order)
             return serializer.data

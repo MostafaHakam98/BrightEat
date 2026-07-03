@@ -247,7 +247,7 @@ async function fetchReport() {
 
 // ── MetricCard component ───────────────────────────────────────
 const colorMap = {
-  blue:    { bg: 'bg-blue-50 dark:bg-blue-900/20',    text: 'text-blue-600 dark:text-blue-400',    hover: 'hover:bg-blue-100 dark:hover:bg-blue-900/40' },
+  blue:    { bg: 'bg-blue-50 dark:bg-blue-900/20',    text: 'text-indigo-600 dark:text-indigo-400',    hover: 'hover:bg-blue-100 dark:hover:bg-blue-900/40' },
   green:   { bg: 'bg-green-50 dark:bg-green-900/20',  text: 'text-green-600 dark:text-green-400',  hover: 'hover:bg-green-100 dark:hover:bg-green-900/40' },
   red:     { bg: 'bg-red-50 dark:bg-red-900/20',      text: 'text-red-600 dark:text-red-400',      hover: 'hover:bg-red-100 dark:hover:bg-red-900/40' },
   purple:  { bg: 'bg-purple-50 dark:bg-purple-900/20',text: 'text-purple-600 dark:text-purple-400',hover: 'hover:bg-purple-100 dark:hover:bg-purple-900/40' },

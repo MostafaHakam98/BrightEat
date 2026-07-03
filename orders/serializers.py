@@ -3,7 +3,6 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.utils import timezone as tz
-from datetime import timedelta
 from .models import (
     User, Restaurant, Menu, MenuItem, CollectionOrder,
     OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification
@@ -321,6 +320,7 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
     participants = serializers.SerializerMethodField()
     assigned_users = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all(), required=False)
     assigned_users_details = serializers.SerializerMethodField()
+    joined_users_details = serializers.SerializerMethodField()
     payments = serializers.SerializerMethodField()
     total_items_cost = serializers.SerializerMethodField()
     total_cost = serializers.SerializerMethodField()
@@ -345,7 +345,7 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
         fields = ['id', 'code', 'restaurant', 'restaurant_name', 'menu', 'menu_name', 'collector', 'collector_name', 'collector_instapay_link', 'collector_instapay_qr_code_url',
                   'status', 'cutoff_time', 'instapay_link', 'is_private', 'assigned_users', 'assigned_users_details',
                   'delivery_fee', 'tip', 'service_fee', 'fee_split_rule', 'created_at', 'locked_at', 'ordered_at', 'closed_at',
-                  'items', 'participants', 'payments', 'total_items_cost', 'total_cost', 
+                  'items', 'participants', 'joined_users_details', 'payments', 'total_items_cost', 'total_cost',
                   'share_message', 'join_url']
         read_only_fields = ['id', 'code', 'collector', 'created_at', 'locked_at', 'ordered_at', 'closed_at', 'assigned_users_details']
     
@@ -361,8 +361,15 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
         return None
     
     def get_participants(self, obj):
-        participants = obj.get_participants()
-        return [{'id': p.id, 'username': p.username, 'email': p.email} for p in participants]
+        # Derive from the (prefetched) items instead of a fresh query per order —
+        # the orders list serializes many orders and would N+1 otherwise.
+        seen = {}
+        for item in obj.items.all():
+            seen.setdefault(item.user_id, item.user)
+        return [{'id': p.id, 'username': p.username, 'email': p.email} for p in seen.values()]
+
+    def get_joined_users_details(self, obj):
+        return [{'id': u.id, 'username': u.username} for u in obj.joined_users.all()]
     
     def get_payments(self, obj):
         payments = obj.payments.all()
@@ -372,7 +379,9 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
             'user_name': p.user.username,
             'amount': float(p.amount),
             'is_paid': p.is_paid,
-            'paid_at': p.paid_at.isoformat() if p.paid_at else None
+            'paid_at': p.paid_at.isoformat() if p.paid_at else None,
+            'proof_status': p.proof_status,
+            'proof_image_url': p.proof_image.url if p.proof_image else None,
         } for p in payments]
     
     def get_total_items_cost(self, obj):
@@ -408,22 +417,9 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         # Format cutoff time in GMT+2 (Egypt timezone)
         if obj.cutoff_time:
-            utc_time = obj.cutoff_time
-            if tz.is_aware(utc_time):
-                # Convert to Egypt timezone (GMT+2)
-                try:
-                    import pytz
-                    egypt_tz = pytz.timezone('Africa/Cairo')
-                    cutoff_local = utc_time.astimezone(egypt_tz)
-                    cutoff_str = cutoff_local.strftime('%I:%M %p')
-                except (ImportError, Exception):
-                    # Fallback: add 2 hours manually if pytz not available
-                    cutoff_local = utc_time + timedelta(hours=2)
-                    cutoff_str = cutoff_local.strftime('%I:%M %p')
-            else:
-                # If naive, assume it's UTC and add 2 hours
-                cutoff_local = utc_time + timedelta(hours=2)
-                cutoff_str = cutoff_local.strftime('%I:%M %p')
+            from zoneinfo import ZoneInfo
+            cutoff_local = obj.cutoff_time.astimezone(ZoneInfo(settings.TIME_ZONE))
+            cutoff_str = cutoff_local.strftime('%I:%M %p')
         else:
             cutoff_str = 'N/A'
         
@@ -445,11 +441,20 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
 class PaymentSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)
     order_code = serializers.CharField(source='order.code', read_only=True)
-    
+    proof_image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Payment
-        fields = ['id', 'order', 'order_code', 'user', 'user_name', 'amount', 'is_paid', 'paid_at', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'order', 'order_code', 'user', 'user_name', 'amount', 'is_paid', 'paid_at',
+                  'proof_status', 'proof_image_url', 'created_at']
+        read_only_fields = ['id', 'proof_status', 'created_at']
+
+    def get_proof_image_url(self, obj):
+        if not obj.proof_image:
+            return None
+        request = self.context.get('request')
+        url = obj.proof_image.url
+        return request.build_absolute_uri(url) if request else url
 
 
 class AuditLogSerializer(serializers.ModelSerializer):

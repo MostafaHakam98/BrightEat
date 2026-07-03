@@ -233,6 +233,14 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://localhost')
 # Hive (BSACAIPortal) SSO — URL of the Hive backend, e.g. https://acai.brightskiesinc.com
 HIVE_URL = os.environ.get('HIVE_URL', '')
 
+# Email domains allowed to sign in via SSO (comma-separated). Company-specific
+# today; per-tenant configuration once multi-tenancy lands (see docs/BACKLOG.md).
+SSO_ALLOWED_EMAIL_DOMAINS = [
+    d.strip().lstrip('@')
+    for d in os.environ.get('SSO_ALLOWED_EMAIL_DOMAINS', 'brightskiesinc.com').split(',')
+    if d.strip()
+]
+
 # Cite API base URL
 CITE_API_BASE_URL = os.environ.get('CITE_API_BASE_URL', '')
 
@@ -244,6 +252,46 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Schedules defined here are synced into the DatabaseScheduler on beat startup.
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    'enforce-order-cutoffs': {
+        'task': 'enforce_order_cutoffs',
+        'schedule': 60.0,  # every minute
+    },
+    'send-payment-reminders': {
+        'task': 'send_payment_reminders',
+        'schedule': crontab(hour=11, minute=0),  # daily, Africa/Cairo
+    },
+    'purge-old-records': {
+        'task': 'purge_old_records',
+        'schedule': crontab(hour=4, minute=0),  # daily retention sweep
+    },
+}
+
+# Retention windows (days) for unbounded tables
+NOTIFICATION_RETENTION_DAYS = int(os.environ.get('NOTIFICATION_RETENTION_DAYS', 90))
+AUDIT_LOG_RETENTION_DAYS = int(os.environ.get('AUDIT_LOG_RETENTION_DAYS', 365))
+
+# Web Push (VAPID). Generate a key pair once per deployment:
+#   npx web-push generate-vapid-keys   (or  python -m py_vapid --gen)
+# Leave empty to disable push entirely (in-app + WS notifications still work).
+WEBPUSH_VAPID_PUBLIC_KEY = os.environ.get('WEBPUSH_VAPID_PUBLIC_KEY', '')
+WEBPUSH_VAPID_PRIVATE_KEY = os.environ.get('WEBPUSH_VAPID_PRIVATE_KEY', '')
+WEBPUSH_VAPID_CLAIMS_EMAIL = os.environ.get('WEBPUSH_VAPID_CLAIMS_EMAIL', 'admin@orderq.local')
+
+# Sentry error tracking — no-op unless SENTRY_DSN is set
+_sentry_dsn = os.environ.get('SENTRY_DSN', '')
+if _sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.environ.get('SENTRY_ENVIRONMENT', 'production' if not DEBUG else 'development'),
+        traces_sample_rate=float(os.environ.get('SENTRY_TRACES_SAMPLE_RATE', '0.1')),
+        send_default_pii=False,
+    )
 
 # Logging
 LOGGING = {

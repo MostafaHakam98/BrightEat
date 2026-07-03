@@ -7,6 +7,7 @@ from .views import (
     PaymentViewSet, AuditLogViewSet, FeePresetViewSet, RecommendationViewSet,
     MicrosoftSSOStatusView, MicrosoftLoginView, MicrosoftCallbackView, HiveSSOView,
     TaskStatusView, NotificationViewSet,
+    PushPublicKeyView, PushSubscribeView, PushUnsubscribeView,
 )
 
 router = DefaultRouter()
@@ -32,5 +33,8 @@ urlpatterns = [
     path('auth/microsoft/callback/', MicrosoftCallbackView.as_view(), name='ms-callback'),
     path('auth/hive-sso/', HiveSSOView.as_view(), name='hive-sso'),
     path('task-status/<str:task_id>/', TaskStatusView.as_view(), name='task-status'),
+    path('push/public_key/', PushPublicKeyView.as_view(), name='push-public-key'),
+    path('push/subscribe/', PushSubscribeView.as_view(), name='push-subscribe'),
+    path('push/unsubscribe/', PushUnsubscribeView.as_view(), name='push-unsubscribe'),
 ]
 

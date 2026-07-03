@@ -22,7 +22,7 @@ def broadcast_order_update(order):
     refreshed_order = CollectionOrder.objects.prefetch_related(
         Prefetch('items', queryset=OrderItem.objects.select_related('user', 'menu_item').order_by('-created_at')),
         Prefetch('payments', queryset=Payment.objects.select_related('user').order_by('-created_at')),
-        'assigned_users'
+        'assigned_users', 'joined_users'
     ).select_related('restaurant', 'menu', 'collector').get(id=order.id)
     
     # Serialize order data with request context (if available)
@@ -40,6 +40,24 @@ def broadcast_order_update(order):
             'order': order_data
         }
     )
+
+
+def push_user_notifications(notifications):
+    """Push freshly created Notification rows to each recipient's personal
+    WebSocket group so the bell updates without polling."""
+    channel_layer = get_channel_layer()
+    if not channel_layer or not notifications:
+        return
+
+    from .serializers import NotificationSerializer
+    for notification in notifications:
+        async_to_sync(channel_layer.group_send)(
+            f'user_{notification.user_id}',
+            {
+                'type': 'notification',
+                'notification': NotificationSerializer(notification).data,
+            }
+        )
 
 
 def broadcast_new_order(order):
@@ -61,7 +79,7 @@ def broadcast_new_order(order):
         refreshed_order = CollectionOrder.objects.prefetch_related(
             Prefetch('items', queryset=OrderItem.objects.select_related('user', 'menu_item').order_by('-created_at')),
             Prefetch('payments', queryset=Payment.objects.select_related('user').order_by('-created_at')),
-            'assigned_users'
+            'assigned_users', 'joined_users'
         ).select_related('restaurant', 'menu', 'collector').get(id=order.id)
         
         # Serialize order data
