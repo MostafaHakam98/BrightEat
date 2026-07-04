@@ -1,22 +1,278 @@
 <template>
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <div class="mb-8">
-      <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Welcome to OrderQ</h1>
-      <p class="mt-2 text-gray-600 dark:text-gray-400">Your internal food ordering portal</p>
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+    <!-- ═══════════════ HERO ═══════════════ -->
+    <section
+      class="home-rise relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 dark:from-indigo-950 dark:via-indigo-900 dark:to-violet-900 shadow-lg shadow-indigo-600/20 dark:shadow-black/40"
+    >
+      <!-- decorative layers -->
+      <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div class="hero-dots absolute inset-0 opacity-60" />
+        <div class="absolute -top-24 -right-16 h-72 w-72 rounded-full bg-violet-400/30 dark:bg-violet-500/20 blur-3xl" />
+        <div class="absolute -bottom-28 -left-10 h-72 w-72 rounded-full bg-indigo-300/25 dark:bg-indigo-400/10 blur-3xl" />
+      </div>
+
+      <div class="relative px-5 py-6 sm:px-8 sm:py-8">
+        <div class="flex flex-col lg:flex-row lg:items-start gap-6">
+          <!-- Greeting + boarding -->
+          <div class="flex-1 min-w-0">
+            <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+              {{ greeting }} 👋
+            </h1>
+            <p class="mt-1.5 text-sm sm:text-base text-indigo-100/90">{{ subline }}</p>
+
+            <!-- 🚂 Boarding now -->
+            <div
+              v-if="boardingOrder"
+              class="mt-5 rounded-2xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm p-4 sm:p-5"
+            >
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-70" />
+                      <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300" />
+                    </span>
+                    <p class="text-[11px] font-bold uppercase tracking-widest text-emerald-200">Boarding now</p>
+                  </div>
+                  <p class="mt-1.5 text-white font-semibold truncate">
+                    🚂 {{ boardingOrder.restaurant_name }} is boarding —
+                    code <span class="font-mono tracking-wider">{{ boardingOrder.code }}</span>
+                  </p>
+                  <p v-if="countdown(boardingOrder.cutoff_time)" class="mt-2">
+                    <span
+                      class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1"
+                      :class="{
+                        'bg-white/15 text-white ring-white/20': countdown(boardingOrder.cutoff_time).urgency === 'normal',
+                        'bg-amber-300/20 text-amber-100 ring-amber-200/30': countdown(boardingOrder.cutoff_time).urgency === 'warning',
+                        'bg-red-400/25 text-red-100 ring-red-300/30 animate-pulse': countdown(boardingOrder.cutoff_time).urgency === 'urgent',
+                        'bg-white/10 text-indigo-100 ring-white/15': countdown(boardingOrder.cutoff_time).urgency === 'passed',
+                      }"
+                    >
+                      ⏱ {{ countdown(boardingOrder.cutoff_time).text }}
+                    </span>
+                  </p>
+                </div>
+                <BaseButton
+                  class="!bg-white !text-indigo-700 hover:!bg-indigo-50 shrink-0 shadow-sm"
+                  @click="router.push(`/orders/${boardingOrder.code}`)"
+                >
+                  Hop on →
+                </BaseButton>
+              </div>
+            </div>
+          </div>
+
+          <!-- Inline join-by-code -->
+          <div class="w-full lg:w-80 shrink-0 lg:pt-1">
+            <form @submit.prevent="joinOrder" class="rounded-2xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm p-4">
+              <label for="hero-join-code" class="block text-[11px] font-bold uppercase tracking-widest text-indigo-100/90">
+                Join an order
+              </label>
+              <div class="mt-2 flex gap-2">
+                <input
+                  id="hero-join-code"
+                  v-model="joinCode"
+                  type="text"
+                  required
+                  autocomplete="off"
+                  placeholder="Got a code?"
+                  class="min-w-0 flex-1 rounded-xl bg-white/15 border border-white/25 px-3 py-2 text-sm font-mono uppercase tracking-widest text-white placeholder:normal-case placeholder:tracking-normal placeholder:font-sans placeholder-indigo-200/80 focus:outline-none focus:ring-2 focus:ring-white/60 focus:border-transparent"
+                />
+                <BaseButton
+                  type="submit"
+                  :loading="joining"
+                  class="!bg-white !text-indigo-700 hover:!bg-indigo-50 shrink-0 shadow-sm"
+                >
+                  Join
+                </BaseButton>
+              </div>
+              <p class="mt-2 text-xs text-indigo-100/70">Paste the code from your group chat.</p>
+            </form>
+          </div>
+        </div>
+
+        <!-- Stat chips -->
+        <div class="mt-6">
+          <div v-if="loadingOrders" class="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <div
+              v-for="i in 3"
+              :key="i"
+              class="h-10 w-full sm:w-44 rounded-xl bg-white/10 ring-1 ring-white/10 animate-pulse"
+              aria-hidden="true"
+            />
+          </div>
+          <div v-else class="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <div class="flex items-center justify-between sm:justify-start gap-2.5 rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm px-3.5 py-2">
+              <span class="text-xs font-medium text-indigo-100/80">🍽 Active orders</span>
+              <span class="text-sm font-bold text-white tabular-nums">{{ activeOrders.length }}</span>
+            </div>
+            <div class="flex items-center justify-between sm:justify-start gap-2.5 rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm px-3.5 py-2">
+              <span class="text-xs font-medium text-indigo-100/80">💸 You owe</span>
+              <span class="text-sm font-bold tabular-nums" :class="youOweTotal > 0 ? 'text-amber-200' : 'text-white'">
+                {{ formatPrice(youOweTotal) }} EGP
+              </span>
+            </div>
+            <div class="flex items-center justify-between sm:justify-start gap-2.5 rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm px-3.5 py-2">
+              <span class="text-xs font-medium text-indigo-100/80">🪙 Owed to you</span>
+              <span class="text-sm font-bold tabular-nums" :class="owedToMeTotal > 0 ? 'text-emerald-200' : 'text-white'">
+                {{ formatPrice(owedToMeTotal) }} EGP
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ TABS ═══════════════ -->
+    <div class="home-rise home-rise-1 mt-6 sm:mt-8">
+      <div class="inline-flex w-full sm:w-auto items-stretch gap-1 rounded-2xl bg-white dark:bg-gray-800 p-1 ring-1 ring-gray-200/80 dark:ring-gray-700/60 shadow-sm">
+        <button
+          type="button"
+          aria-label="Active orders"
+          :aria-pressed="activeTab === 'active'"
+          @click="switchTab('active')"
+          :class="tabClass('active')"
+        >
+          <span aria-hidden="true">🍽</span>
+          <span class="hidden sm:inline">Active orders</span><span class="sm:hidden">Active</span>
+          <span
+            class="ml-0.5 rounded-full px-1.5 py-px text-[11px] font-bold tabular-nums"
+            :class="activeTab === 'active' ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'"
+          >{{ activeOrders.length }}</span>
+        </button>
+        <button
+          type="button"
+          aria-label="New order"
+          :aria-pressed="activeTab === 'new'"
+          @click="switchTab('new')"
+          :class="tabClass('new')"
+        >
+          <span aria-hidden="true">➕</span>
+          <span class="hidden sm:inline">New order</span><span class="sm:hidden">New</span>
+        </button>
+        <button
+          type="button"
+          aria-label="Scheduled"
+          :aria-pressed="activeTab === 'scheduled'"
+          @click="switchTab('scheduled')"
+          :class="tabClass('scheduled')"
+        >
+          <span aria-hidden="true">⏰</span>
+          <span class="hidden sm:inline">Scheduled</span><span class="sm:hidden">Auto</span>
+          <span
+            v-if="schedules.length"
+            class="ml-0.5 rounded-full px-1.5 py-px text-[11px] font-bold tabular-nums"
+            :class="activeTab === 'scheduled' ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'"
+          >{{ schedules.length }}</span>
+        </button>
+      </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-      <div id="create-order-form" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm hover:shadow-md transition-shadow p-6">
-        <div class="flex items-center gap-2 mb-4">
-          <h2 class="text-xl font-semibold dark:text-white">Create New Order</h2>
+    <!-- ─────────── Panel: Active orders ─────────── -->
+    <section v-if="activeTab === 'active'" class="home-rise home-rise-2 mt-5">
+      <div v-if="loadingOrders" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        <SkeletonOrderCard v-for="i in 3" :key="i" />
+      </div>
+
+      <div v-else-if="activeOrders.length === 0" class="rounded-3xl bg-white dark:bg-gray-800 ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm px-6 py-16 text-center">
+        <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-4xl" aria-hidden="true">🍽</div>
+        <h3 class="mt-4 text-lg font-semibold text-gray-900 dark:text-white">No active orders right now</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Start one and share the code in the group</p>
+        <BaseButton class="mt-5" @click="switchTab('new')">Start an order</BaseButton>
+      </div>
+
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        <article
+          v-for="order in activeOrders"
+          :key="order.id"
+          class="relative overflow-hidden bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/60 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-5"
+        >
+          <span
+            class="absolute inset-x-0 top-0 h-1"
+            :class="{
+              'bg-green-500': order.status === 'OPEN',
+              'bg-amber-500': order.status === 'LOCKED',
+              'bg-blue-500': order.status === 'ORDERED',
+              'bg-gray-400': order.status === 'CLOSED',
+            }"
+            aria-hidden="true"
+          />
+
+          <div class="flex items-start justify-between gap-3">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ order.restaurant_name }}</h3>
+            <BaseBadge :color="order.status">{{ order.status }}</BaseBadge>
+          </div>
+
+          <dl class="mt-2.5 space-y-1 text-sm text-gray-600 dark:text-gray-400">
+            <div class="flex items-center gap-1.5">
+              <dt class="text-gray-400 dark:text-gray-500">Code</dt>
+              <dd class="font-mono text-xs font-semibold tracking-wider text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/70 rounded px-1.5 py-0.5">{{ order.code }}</dd>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <dt class="text-gray-400 dark:text-gray-500">Collector</dt>
+              <dd class="truncate">{{ order.collector_name }}</dd>
+            </div>
+          </dl>
+
+          <div class="mt-2.5 flex flex-wrap items-center gap-2">
+            <span
+              v-if="countdown(order.cutoff_time)"
+              class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+              :class="{
+                'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': countdown(order.cutoff_time).urgency === 'normal',
+                'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300': countdown(order.cutoff_time).urgency === 'warning',
+                'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 animate-pulse': countdown(order.cutoff_time).urgency === 'urgent',
+                'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500': countdown(order.cutoff_time).urgency === 'passed',
+              }"
+            >
+              ⏱ {{ countdown(order.cutoff_time).text }}
+            </span>
+            <span
+              v-if="getPendingPayment(order.id)"
+              class="inline-flex items-center rounded-full bg-yellow-100 dark:bg-yellow-900/40 px-2 py-0.5 text-xs font-semibold text-yellow-700 dark:text-yellow-300"
+            >
+              Pending {{ formatPrice(getPendingPayment(order.id).amount) }} EGP
+            </span>
+          </div>
+
+          <div class="mt-4 flex gap-2">
+            <router-link
+              :to="`/orders/${order.code}`"
+              class="flex-1 inline-flex items-center justify-center rounded-xl bg-indigo-600 dark:bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-gray-900"
+            >
+              View details
+            </router-link>
+            <BaseButton
+              v-if="getPendingPayment(order.id)"
+              variant="success"
+              :loading="markingPaid === getPendingPayment(order.id).payment_id"
+              @click="markAsPaid(getPendingPayment(order.id).payment_id, order.id)"
+            >
+              Pay
+            </BaseButton>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ─────────── Panel: New order ─────────── -->
+    <section v-if="activeTab === 'new'" class="home-rise home-rise-2 mt-5">
+      <div
+        id="create-order-form"
+        class="max-w-2xl bg-white dark:bg-gray-800 rounded-3xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm p-6 sm:p-8"
+      >
+        <div class="flex items-center gap-2 flex-wrap">
+          <h2 class="text-xl font-bold text-gray-900 dark:text-white">Create New Order</h2>
           <span
             v-if="reorderBanner"
-            class="text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full"
+            class="text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full font-medium"
           >
             ↺ {{ reorderBanner }}
           </span>
         </div>
-        <form @submit.prevent="createOrder" class="space-y-4">
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Open the train — everyone hops on with the code.</p>
+
+        <form @submit.prevent="createOrder" class="mt-6 space-y-4">
           <div class="relative" ref="restaurantDropdownRef">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Restaurant</label>
             <input
@@ -26,11 +282,11 @@
               type="text"
               autocomplete="off"
               placeholder="Search restaurant…"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
             />
             <ul
               v-if="restaurantOpen && filteredRestaurants.length"
-              class="absolute z-20 mt-1 w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto"
+              class="absolute z-20 mt-1 w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl shadow-lg max-h-48 overflow-y-auto"
             >
               <li
                 v-for="r in filteredRestaurants"
@@ -40,6 +296,7 @@
               >{{ r.name }}</li>
             </ul>
           </div>
+
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Menu
@@ -51,7 +308,7 @@
               v-model="newOrder.menu"
               :required="availableMenus.length > 0"
               :disabled="!newOrder.restaurant || availableMenus.length === 0"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed dark:bg-gray-700 dark:text-white"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed dark:bg-gray-700 dark:text-white"
             >
               <option :value="null">
                 {{ availableMenus.length === 0 ? 'No menus available for this restaurant' : 'Select a menu' }}
@@ -63,12 +320,13 @@
             <p v-if="availableMenus.length > 0" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Select a menu for this order</p>
             <p v-else-if="newOrder.restaurant" class="mt-1 text-xs text-gray-500 dark:text-gray-400">No menus available. You can still create the order and add items manually.</p>
           </div>
+
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Cutoff Time</label>
             <input
               v-model="newOrder.cutoff_time"
               type="datetime-local"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
             />
           </div>
 
@@ -78,7 +336,7 @@
             <select
               v-model="selectedPresetId"
               @change="applyPreset"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
             >
               <option :value="null">— Custom / No Preset —</option>
               <option v-for="p in ordersStore.feePresets" :key="p.id" :value="p.id">
@@ -87,12 +345,12 @@
             </select>
           </div>
 
-          <!-- Fee fields (shown collapsed by default, expanded when preset applied or toggled) -->
-          <div>
+          <!-- Fee fields (collapsed by default, expanded when preset applied or toggled) -->
+          <div class="rounded-xl border border-dashed border-gray-200 dark:border-gray-700 px-3 py-2.5">
             <button
               type="button"
               @click="showFeeFields = !showFeeFields"
-              class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+              class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
             >
               {{ showFeeFields ? 'Hide fee details ▲' : 'Edit fee details ▼' }}
             </button>
@@ -135,32 +393,69 @@
               Make this order private (only participants can see it)
             </label>
           </div>
-          <button
-            type="submit"
-            :disabled="loading"
-            class="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 font-medium transition-colors"
-          >
-            {{ loading ? 'Creating...' : 'Create Order' }}
-          </button>
+
+          <BaseButton type="submit" block :loading="loading">
+            Create Order
+          </BaseButton>
         </form>
       </div>
+    </section>
 
-      <BaseCard title="⏰ Scheduled orders">
-        <div v-if="loadingSchedules" class="text-sm text-gray-500 dark:text-gray-400 py-2">Loading schedules…</div>
-        <div v-else-if="schedules.length === 0" class="text-sm text-gray-500 dark:text-gray-400 py-2">
-          No schedules yet — set one up and the order opens itself.
+    <!-- ─────────── Panel: Scheduled ─────────── -->
+    <section v-if="activeTab === 'scheduled'" class="home-rise home-rise-2 mt-5">
+      <div class="max-w-2xl bg-white dark:bg-gray-800 rounded-3xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm p-6 sm:p-8">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white">Scheduled orders</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Recurring orders that open themselves.</p>
+          </div>
+          <BaseButton
+            v-if="schedules.length > 0 || showScheduleForm"
+            variant="secondary"
+            size="sm"
+            @click="showScheduleForm = !showScheduleForm"
+          >
+            {{ showScheduleForm ? 'Close form' : '➕ New schedule' }}
+          </BaseButton>
         </div>
-        <div v-else class="space-y-3">
-          <div
+
+        <!-- Loading -->
+        <div v-if="loadingSchedules" class="mt-5 space-y-3" aria-hidden="true">
+          <div v-for="i in 2" :key="i" class="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex-1 space-y-2">
+              <BaseSkeleton width="45%" height="1rem" />
+              <BaseSkeleton width="60%" height="0.75rem" />
+            </div>
+            <BaseSkeleton width="2.25rem" height="1.25rem" rounded="full" />
+          </div>
+        </div>
+
+        <!-- Empty state -->
+        <div v-else-if="schedules.length === 0 && !showScheduleForm" class="mt-5 rounded-2xl border border-dashed border-gray-300 dark:border-gray-600 px-6 py-12 text-center">
+          <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-3xl" aria-hidden="true">⏰</div>
+          <h3 class="mt-3 text-base font-semibold text-gray-900 dark:text-white">No schedules yet — lunch that starts itself</h3>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Pick a restaurant, a time, and the days. The order opens automatically.</p>
+          <BaseButton class="mt-5" @click="showScheduleForm = true">➕ New schedule</BaseButton>
+        </div>
+
+        <!-- Schedule rows -->
+        <ul v-if="!loadingSchedules && schedules.length > 0" class="mt-5 space-y-3">
+          <li
             v-for="schedule in schedules"
             :key="schedule.id"
-            class="flex items-center justify-between gap-3 border border-gray-200 dark:border-gray-700 rounded-lg p-3"
+            class="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 dark:border-gray-700 p-4 transition-opacity"
+            :class="schedule.is_active ? '' : 'opacity-60'"
           >
-            <div class="min-w-0">
-              <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
-                {{ schedule.restaurant_name }} · {{ formatScheduleTime(schedule.open_at) }}
-              </p>
-              <div class="mt-1 flex flex-wrap gap-1">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                  {{ schedule.restaurant_name }}
+                </p>
+                <span class="inline-flex items-center rounded-md bg-indigo-50 dark:bg-indigo-900/40 px-1.5 py-0.5 font-mono text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                  {{ formatScheduleTime(schedule.open_at) }}
+                </span>
+              </div>
+              <div class="mt-1.5 flex flex-wrap gap-1">
                 <span
                   v-for="day in scheduleWeekdays(schedule.weekdays)"
                   :key="day.value"
@@ -175,7 +470,7 @@
                 :aria-checked="schedule.is_active"
                 :disabled="togglingSchedule === schedule.id"
                 @click="toggleSchedule(schedule)"
-                class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50"
+                class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-gray-800"
                 :class="schedule.is_active ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'"
                 :title="schedule.is_active ? 'Active — click to pause' : 'Paused — click to activate'"
               >
@@ -187,217 +482,115 @@
               <button
                 type="button"
                 @click="deleteSchedule(schedule)"
-                class="text-gray-400 hover:text-red-600 dark:hover:text-red-400 px-1"
+                class="rounded-lg p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition-colors"
                 title="Delete schedule"
                 aria-label="Delete schedule"
               >✕</button>
             </div>
-          </div>
-        </div>
+          </li>
+        </ul>
 
-        <!-- New schedule (collapsed by default) -->
-        <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
-          <button
-            type="button"
-            @click="showScheduleForm = !showScheduleForm"
-            class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
-          >
-            {{ showScheduleForm ? 'Hide new schedule ▲' : '+ New schedule ▼' }}
-          </button>
-          <form v-if="showScheduleForm" @submit.prevent="createSchedule" class="mt-3 space-y-3">
+        <!-- New schedule form -->
+        <form
+          v-if="showScheduleForm"
+          @submit.prevent="createSchedule"
+          class="mt-5 space-y-4 rounded-2xl bg-gray-50 dark:bg-gray-900/40 ring-1 ring-gray-200 dark:ring-gray-700 p-4 sm:p-5"
+        >
+          <h3 class="text-sm font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">New schedule</h3>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Restaurant</label>
+            <select
+              v-model="newSchedule.restaurant"
+              @change="onScheduleRestaurantChange"
+              required
+              class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+            >
+              <option value="" disabled>Select a restaurant</option>
+              <option v-for="r in ordersStore.restaurants" :key="r.id" :value="r.id">{{ r.name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Menu (optional)</label>
+            <select
+              v-model="newSchedule.menu"
+              :disabled="!newSchedule.restaurant || scheduleMenus.length === 0"
+              class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
+            >
+              <option :value="null">{{ scheduleMenus.length === 0 ? 'No menus available' : 'No specific menu' }}</option>
+              <option v-for="menu in scheduleMenus" :key="menu.id" :value="menu.id">{{ menu.name }}</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Restaurant</label>
-              <select
-                v-model="newSchedule.restaurant"
-                @change="onScheduleRestaurantChange"
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Opens at</label>
+              <input
+                v-model="newSchedule.open_at"
+                type="time"
                 required
                 class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
-              >
-                <option value="" disabled>Select a restaurant</option>
-                <option v-for="r in ordersStore.restaurants" :key="r.id" :value="r.id">{{ r.name }}</option>
-              </select>
+              />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Menu (optional)</label>
-              <select
-                v-model="newSchedule.menu"
-                :disabled="!newSchedule.restaurant || scheduleMenus.length === 0"
-                class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
-              >
-                <option :value="null">{{ scheduleMenus.length === 0 ? 'No menus available' : 'No specific menu' }}</option>
-                <option v-for="menu in scheduleMenus" :key="menu.id" :value="menu.id">{{ menu.name }}</option>
-              </select>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Opens at</label>
-                <input
-                  v-model="newSchedule.open_at"
-                  type="time"
-                  required
-                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Cutoff after (min)</label>
-                <input
-                  v-model.number="newSchedule.cutoff_after_minutes"
-                  type="number"
-                  min="0"
-                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
-                />
-              </div>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Days</label>
-              <div class="mt-1 flex flex-wrap gap-1.5">
-                <button
-                  v-for="day in weekdayOptions"
-                  :key="day.value"
-                  type="button"
-                  @click="toggleWeekday(day.value)"
-                  class="text-xs font-medium px-2 py-1 rounded-full border transition-colors"
-                  :class="newSchedule.weekdays.includes(day.value)
-                    ? 'bg-indigo-600 border-indigo-600 text-white'
-                    : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-indigo-400'"
-                >
-                  {{ day.label }}
-                </button>
-              </div>
-            </div>
-            <div class="grid grid-cols-3 gap-2">
-              <div>
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Delivery</label>
-                <input v-model.number="newSchedule.delivery_fee" type="number" min="0" step="0.01"
-                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Tip</label>
-                <input v-model.number="newSchedule.tip" type="number" min="0" step="0.01"
-                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Service</label>
-                <input v-model.number="newSchedule.service_fee" type="number" min="0" step="0.01"
-                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
-              </div>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Fee Split</label>
-              <select
-                v-model="newSchedule.fee_split_rule"
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Cutoff after (min)</label>
+              <input
+                v-model.number="newSchedule.cutoff_after_minutes"
+                type="number"
+                min="0"
                 class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
-              >
-                <option value="equal">Equal</option>
-                <option value="proportional">Proportional</option>
-                <option value="collector_pays">Collector Pays</option>
-              </select>
+              />
             </div>
-            <BaseButton type="submit" block :loading="creatingSchedule">
-              Schedule it
-            </BaseButton>
-          </form>
-        </div>
-      </BaseCard>
-
-      <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm hover:shadow-md transition-shadow p-6">
-        <h2 class="text-xl font-semibold mb-4 dark:text-white">Join Order</h2>
-        <form @submit.prevent="joinOrder" class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Order Code</label>
-            <input
-              v-model="joinCode"
-              type="text"
-              placeholder="Enter order code"
-              required
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
-            />
           </div>
-          <button
-            type="submit"
-            :disabled="loading"
-            class="w-full bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50"
-          >
-            {{ loading ? 'Joining...' : 'Join Order' }}
-          </button>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Days</label>
+            <div class="mt-1 flex flex-wrap gap-1.5">
+              <button
+                v-for="day in weekdayOptions"
+                :key="day.value"
+                type="button"
+                @click="toggleWeekday(day.value)"
+                class="text-xs font-medium px-2 py-1 rounded-full border transition-colors"
+                :class="newSchedule.weekdays.includes(day.value)
+                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                  : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-indigo-400'"
+              >
+                {{ day.label }}
+              </button>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Delivery</label>
+              <input v-model.number="newSchedule.delivery_fee" type="number" min="0" step="0.01"
+                class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Tip</label>
+              <input v-model.number="newSchedule.tip" type="number" min="0" step="0.01"
+                class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Service</label>
+              <input v-model.number="newSchedule.service_fee" type="number" min="0" step="0.01"
+                class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Fee Split</label>
+            <select
+              v-model="newSchedule.fee_split_rule"
+              class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+            >
+              <option value="equal">Equal</option>
+              <option value="proportional">Proportional</option>
+              <option value="collector_pays">Collector Pays</option>
+            </select>
+          </div>
+          <BaseButton type="submit" block :loading="creatingSchedule">
+            Schedule it
+          </BaseButton>
         </form>
       </div>
-    </div>
-
-    <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm">
-      <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-        <h2 class="text-xl font-semibold dark:text-white">Active Orders</h2>
-      </div>
-      <div class="p-6">
-        <div v-if="loadingOrders" class="text-center py-8 text-gray-600 dark:text-gray-400">Loading...</div>
-        <div v-else-if="activeOrders.length === 0" class="text-center py-8 text-gray-500 dark:text-gray-400">
-          No active orders
-        </div>
-        <div v-else class="space-y-4">
-          <div
-            v-for="order in activeOrders"
-            :key="order.id"
-            :class="[
-              'border-l-4 rounded-lg p-4 pl-5 hover:shadow-md transition dark:bg-gray-700 border border-gray-200 dark:border-gray-600',
-              order.status === 'OPEN' ? 'border-l-green-500' : '',
-              order.status === 'LOCKED' ? 'border-l-amber-500' : '',
-              order.status === 'ORDERED' ? 'border-l-blue-500' : '',
-              order.status === 'CLOSED' ? 'border-l-gray-400' : '',
-            ]"
-          >
-            <div class="flex justify-between items-start">
-              <div>
-                <h3 class="text-lg font-semibold dark:text-white">{{ order.restaurant_name }}</h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Code: {{ order.code }}</p>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Collector: {{ order.collector_name }}</p>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Status:
-                  <span :class="{
-                    'text-green-600 dark:text-green-400': order.status === 'OPEN',
-                    'text-yellow-600 dark:text-yellow-400': order.status === 'LOCKED',
-                    'text-indigo-600 dark:text-indigo-400': order.status === 'ORDERED',
-                    'text-gray-600 dark:text-gray-400': order.status === 'CLOSED',
-                  }">
-                    {{ order.status }}
-                  </span>
-                </p>
-                <p v-if="countdown(order.cutoff_time)" class="mt-1">
-                  <span
-                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
-                    :class="{
-                      'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': countdown(order.cutoff_time).urgency === 'normal',
-                      'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300': countdown(order.cutoff_time).urgency === 'warning',
-                      'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 animate-pulse': countdown(order.cutoff_time).urgency === 'urgent',
-                      'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500': countdown(order.cutoff_time).urgency === 'passed',
-                    }"
-                  >
-                    ⏱ {{ countdown(order.cutoff_time).text }}
-                  </span>
-                </p>
-                <p v-if="getPendingPayment(order.id)" class="text-sm font-semibold text-yellow-600 dark:text-yellow-400 mt-1">
-                  Pending: {{ formatPrice(getPendingPayment(order.id).amount) }} EGP
-                </p>
-              </div>
-              <div class="flex flex-col gap-2">
-                <router-link
-                  :to="`/orders/${order.code}`"
-                  class="bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 text-center text-sm font-medium transition-colors"
-                >
-                  View
-                </router-link>
-                <button
-                  v-if="getPendingPayment(order.id)"
-                  @click="markAsPaid(getPendingPayment(order.id).payment_id, order.id)"
-                  :disabled="markingPaid === getPendingPayment(order.id).payment_id"
-                  class="bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 text-sm"
-                >
-                  {{ markingPaid === getPendingPayment(order.id).payment_id ? 'Paying...' : 'Pay' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -412,7 +605,9 @@ import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
 import BaseButton from '../components/ui/BaseButton.vue'
-import BaseCard from '../components/ui/BaseCard.vue'
+import BaseBadge from '../components/ui/BaseBadge.vue'
+import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
+import SkeletonOrderCard from '../components/ui/SkeletonOrderCard.vue'
 
 const toast = useToast()
 const { confirm: $confirm } = useConfirm()
@@ -428,6 +623,58 @@ function countdown(cutoffTime) {
   return formatCountdown(cutoffTime)
 }
 
+// --- Hero: greeting + subline ---
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const name = authStore.user?.first_name || authStore.user?.username || 'there'
+  return `${part}, ${name}`
+})
+
+const subline = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Coffee first — then rally the lunch train.'
+  if (hour < 18) return 'Prime boarding hours. Don’t miss the train.'
+  return 'Late cravings? Someone is probably ordering.'
+})
+
+// --- Hero: boarding order (nearest-cutoff OPEN order) ---
+const boardingOrder = computed(() => {
+  const open = ordersStore.orders.filter(o => o.status === 'OPEN')
+  if (open.length === 0) return null
+  const now = Date.now()
+  const withFutureCutoff = open.filter(o => o.cutoff_time && new Date(o.cutoff_time).getTime() > now)
+  if (withFutureCutoff.length > 0) {
+    return [...withFutureCutoff].sort(
+      (a, b) => new Date(a.cutoff_time) - new Date(b.cutoff_time)
+    )[0]
+  }
+  return [...open].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0]
+})
+
+// --- Tabs ---
+const HOME_TAB_KEY = 'orderq:home-tab'
+const VALID_TABS = ['active', 'new', 'scheduled']
+const activeTab = ref('active')
+try {
+  const saved = localStorage.getItem(HOME_TAB_KEY)
+  if (VALID_TABS.includes(saved)) activeTab.value = saved
+} catch { /* localStorage unavailable — keep default */ }
+
+function switchTab(tab) {
+  activeTab.value = tab
+  try { localStorage.setItem(HOME_TAB_KEY, tab) } catch { /* noop */ }
+}
+
+function tabClass(tab) {
+  return [
+    'flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-xl px-3 sm:px-4 py-2 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500',
+    activeTab.value === tab
+      ? 'bg-indigo-600 text-white shadow-sm'
+      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/70',
+  ]
+}
+
 const newOrder = ref({
   restaurant: '',
   menu: null,
@@ -440,10 +687,12 @@ const newOrder = ref({
 })
 const joinCode = ref('')
 const loading = ref(false)
+const joining = ref(false)
 const loadingOrders = ref(false)
 const availableMenus = ref([])
 const loadingMenus = ref(false)
 const pendingPayments = ref([])
+const owedToMePayments = ref([])
 const markingPaid = ref(null)
 const selectedPresetId = ref(null)
 const showFeeFields = ref(false)
@@ -463,6 +712,14 @@ const activeOrders = computed(() => {
   return ordersStore.orders.filter(o => o.status !== 'CLOSED')
 })
 
+// --- Hero stats ---
+const youOweTotal = computed(() =>
+  pendingPayments.value.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+)
+const owedToMeTotal = computed(() =>
+  owedToMePayments.value.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+)
+
 function formatPrice(value) {
   if (value === null || value === undefined) return '0.00'
   const num = typeof value === 'string' ? parseFloat(value) : value
@@ -479,6 +736,15 @@ async function fetchPendingPayments() {
     pendingPayments.value = response.data
   } catch (error) {
     console.error('Failed to fetch pending payments:', error)
+  }
+}
+
+async function fetchOwedToMe() {
+  try {
+    const response = await api.get('/orders/pending_payments_to_me/')
+    owedToMePayments.value = response.data
+  } catch (error) {
+    console.error('Failed to fetch payments owed to me:', error)
   }
 }
 
@@ -503,7 +769,7 @@ async function onRestaurantChange() {
     newOrder.value.menu = null
     return
   }
-  
+
   loadingMenus.value = true
   try {
     const result = await ordersStore.fetchMenus(parseInt(newOrder.value.restaurant))
@@ -667,7 +933,7 @@ function handleOutsideClick(e) {
 onMounted(() => document.addEventListener('mousedown', handleOutsideClick))
 onBeforeUnmount(() => document.removeEventListener('mousedown', handleOutsideClick))
 
-// Keep "Active Orders" live: refetch when any order is created/updated elsewhere
+// Keep "Active orders" live: refetch when any order is created/updated elsewhere
 const notifStore = useNotificationsStore()
 let offOrderEvents = null
 onMounted(() => {
@@ -676,12 +942,19 @@ onMounted(() => {
 onBeforeUnmount(() => { if (offOrderEvents) offOrderEvents() })
 
 onMounted(async () => {
+  // Reorder deep-link opens the New order tab immediately (don't persist —
+  // it's a navigation intent, not a user preference)
+  if (route.query.restaurant) {
+    activeTab.value = 'new'
+  }
+
   loadingOrders.value = true
   await Promise.all([
     ordersStore.fetchRestaurants(),
     ordersStore.fetchOrders(),
     ordersStore.fetchFeePresets(),
     fetchPendingPayments(),
+    fetchOwedToMe(),
     fetchSchedules(),
   ])
   loadingOrders.value = false
@@ -710,7 +983,7 @@ async function createOrder() {
     toast.warning('Please select a menu for this restaurant')
     return
   }
-  
+
   loading.value = true
   const orderData = {
     restaurant: parseInt(newOrder.value.restaurant),
@@ -744,15 +1017,37 @@ async function createOrder() {
 }
 
 async function joinOrder() {
-  loading.value = true
+  joining.value = true
   const result = await ordersStore.fetchOrderByCode(joinCode.value.toUpperCase())
-  
+
   if (result.success) {
     router.push(`/orders/${joinCode.value.toUpperCase()}`)
   } else {
     toast.error('Order not found')
   }
-  loading.value = false
+  joining.value = false
 }
 </script>
 
+<style scoped>
+/* Subtle dot-grid texture over the hero gradient */
+.hero-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 75%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 75%);
+}
+
+/* Staggered entrance */
+@keyframes home-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.home-rise   { animation: home-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.home-rise-1 { animation-delay: 0.07s; }
+.home-rise-2 { animation-delay: 0.14s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .home-rise, .home-rise-1, .home-rise-2 { animation: none; }
+}
+</style>

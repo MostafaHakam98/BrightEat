@@ -18,7 +18,22 @@
       </div>
     </div>
 
-    <div v-if="loading" class="text-center py-8 text-gray-600 dark:text-gray-400">Loading...</div>
+    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-busy="true">
+      <span class="sr-only">Loading restaurants…</span>
+      <div
+        v-for="i in 6"
+        :key="i"
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700 space-y-3"
+      >
+        <BaseSkeleton width="50%" height="1.375rem" />
+        <BaseSkeleton height="0.875rem" />
+        <BaseSkeleton width="70%" height="0.875rem" />
+        <div class="flex gap-2 pt-2">
+          <div class="flex-1"><BaseSkeleton height="2.5rem" /></div>
+          <div class="flex-1"><BaseSkeleton height="2.5rem" /></div>
+        </div>
+      </div>
+    </div>
     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <div
         v-for="restaurant in ordersStore.restaurants"
@@ -176,6 +191,7 @@ import { ref, onMounted } from 'vue'
 import { useOrdersStore } from '../stores/orders'
 import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
+import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 
 const ordersStore = useOrdersStore()
 const toast = useToast()

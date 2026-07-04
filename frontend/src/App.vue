@@ -1,6 +1,16 @@
 <template>
   <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
 
+    <!-- Global top progress bar: shows while any API call or route change is in flight -->
+    <div
+      v-if="progress.loading.value"
+      class="fixed top-0 left-0 right-0 h-0.5 z-[60] overflow-hidden bg-indigo-100/40 dark:bg-indigo-900/30"
+      role="progressbar"
+      aria-label="Loading"
+    >
+      <div class="progress-runner h-full w-2/5 bg-gradient-to-r from-indigo-400 via-indigo-600 to-violet-500 rounded-full" />
+    </div>
+
     <!-- ── Top bar ──────────────────────────────────────────────── -->
     <nav
       v-if="authStore.isAuthenticated"
@@ -240,7 +250,10 @@ import { RouterLink } from 'vue-router'
 import ToastContainer from './components/ToastContainer.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import { useToast } from './composables/useToast'
+import { useGlobalProgress, progressStart, progressStop } from './composables/useGlobalProgress'
 import api from './api'
+
+const progress = useGlobalProgress()
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
@@ -309,6 +322,11 @@ function handleKey(e) {
 // Scroll shadow
 const scrolled = ref(false)
 function handleScroll() { scrolled.value = window.scrollY > 4 }
+// Route transitions (lazy chunk loads) also drive the top progress bar
+router.beforeEach((to, from, next) => { progressStart(); next() })
+router.afterEach(() => progressStop())
+router.onError(() => progressStop())
+
 onMounted(() => {
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKey)
@@ -402,6 +420,16 @@ const SidebarLink = defineComponent({
 .page-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+/* ── Global top progress bar ───────────────────────────────── */
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(120%); }
+  100% { transform: translateX(260%); }
+}
+.progress-runner {
+  animation: progress-slide 1.1s ease-in-out infinite;
 }
 
 /* ── Sidebar transitions ──────────────────────────────────── */

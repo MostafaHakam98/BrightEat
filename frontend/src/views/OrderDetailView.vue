@@ -3,9 +3,59 @@
     class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
     :class="currentOrder && canManage ? 'pb-28 md:pb-8' : ''"
   >
-    <div v-if="loading" class="text-center py-8">
-      <p class="text-lg text-gray-900 dark:text-white">Loading order...</p>
-      <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">Code: {{ route.params.code }}</p>
+    <div v-if="loading" class="space-y-6" aria-busy="true">
+      <span class="sr-only">Loading order {{ route.params.code }}…</span>
+
+      <!-- Header line -->
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="space-y-2">
+          <BaseSkeleton width="16rem" height="2rem" />
+          <BaseSkeleton width="10rem" height="0.875rem" />
+        </div>
+        <BaseSkeleton width="6.5rem" height="2rem" rounded="full" />
+      </div>
+
+      <!-- Stepper bar -->
+      <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm p-4 sm:p-5">
+        <div class="flex items-center gap-3">
+          <template v-for="i in 4" :key="i">
+            <div class="flex flex-col items-center gap-2 shrink-0">
+              <BaseSkeleton width="2rem" height="2rem" rounded="full" />
+              <BaseSkeleton width="3rem" height="0.625rem" class="hidden sm:block" />
+            </div>
+            <div v-if="i < 4" class="flex-1">
+              <BaseSkeleton height="0.375rem" />
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Two-column blocks -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm p-5 sm:p-6 space-y-4">
+          <BaseSkeleton width="9rem" height="1.25rem" />
+          <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-4">
+            <div class="flex-1 space-y-1.5">
+              <BaseSkeleton width="55%" height="0.9375rem" />
+              <BaseSkeleton width="35%" height="0.75rem" />
+            </div>
+            <BaseSkeleton width="4rem" height="1rem" />
+          </div>
+        </div>
+        <div class="space-y-6">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm p-5 space-y-3">
+            <BaseSkeleton width="7rem" height="1.125rem" />
+            <BaseSkeleton height="0.875rem" />
+            <BaseSkeleton width="80%" height="0.875rem" />
+            <BaseSkeleton width="60%" height="0.875rem" />
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm p-5 space-y-3">
+            <BaseSkeleton width="8rem" height="1.125rem" />
+            <BaseSkeleton height="2.25rem" />
+            <BaseSkeleton height="2.25rem" />
+          </div>
+        </div>
+      </div>
     </div>
     <div v-else-if="error" class="text-center py-8">
       <p class="text-red-600 dark:text-red-400 text-lg mb-4">{{ error }}</p>
@@ -1011,6 +1061,7 @@ import QRCode from 'qrcode'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseBadge from '../components/ui/BaseBadge.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
+import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import OrderStepper from '../components/order/OrderStepper.vue'
 import OrderActionBar from '../components/order/OrderActionBar.vue'
 import OrderRoster from '../components/order/OrderRoster.vue'

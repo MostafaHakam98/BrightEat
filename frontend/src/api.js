@@ -1,7 +1,9 @@
 import axios from 'axios'
+import { progressStart, progressStop } from './composables/useGlobalProgress'
 
-// Use relative URL for Docker (proxied through nginx) or absolute for local dev
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://51.20.151.57:8000/api' : '/api')
+// Always relative: nginx proxies /api in production, the Vite dev/preview
+// server proxies it locally (see vite.config.js server.proxy).
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -10,24 +12,30 @@ const api = axios.create({
   },
 })
 
-// Add token to requests
+// Add token to requests + drive the global top progress bar
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    progressStart()
     return config
   },
   (error) => {
+    progressStop()
     return Promise.reject(error)
   }
 )
 
 // Handle token refresh on 401
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    progressStop()
+    return response
+  },
   async (error) => {
+    progressStop()
     const originalRequest = error.config
     
     if (error.response?.status === 401 && !originalRequest._retry) {
