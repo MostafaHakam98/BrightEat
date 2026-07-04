@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
 from django.db import transaction, IntegrityError, connection
@@ -21,7 +21,7 @@ from .serializers import (
     UserSerializer, UserRegistrationSerializer, LoginSerializer, ChangePasswordSerializer,
     RestaurantSerializer, MenuSerializer, MenuItemSerializer, CollectionOrderSerializer,
     OrderItemSerializer, PaymentSerializer, AuditLogSerializer, FeePresetSerializer,
-    RecommendationSerializer, NotificationSerializer
+    RecommendationSerializer, NotificationSerializer, RecurringOrderSerializer
 )
 from .utils import format_item_name
 from .websocket_utils import broadcast_order_update, broadcast_new_order
@@ -151,6 +151,63 @@ class LoginView(APIView):
                 'refresh': str(refresh),
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class QuickJoinView(APIView):
+    """Frictionless join for invite links: a name + an order code creates a
+    lightweight guest account, joins the order, and returns JWTs — no
+    registration wall between a WhatsApp link and a placed order."""
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'quick_join'
+
+    def post(self, request):
+        from django.utils.crypto import get_random_string
+        from django.utils.text import slugify
+
+        name = (request.data.get('name') or '').strip()
+        code = (request.data.get('code') or '').strip().upper()
+        if not name or not code:
+            return Response({'error': 'name and code are required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(name) > 40:
+            return Response({'error': 'Name is too long'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            order = CollectionOrder.objects.exclude(status='DELETED').get(code=code)
+        except CollectionOrder.DoesNotExist:
+            return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+        if order.status != 'OPEN':
+            return Response({'error': 'This order is no longer open'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if order.assigned_users.exists():
+            return Response({'error': 'This order is private — sign in with your account'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        base = slugify(name).replace('-', '_')[:20] or 'guest'
+        username = f'{base}_{get_random_string(4).lower()}'
+        user = User.objects.create_user(username=username, first_name=name, role='user')
+        user.set_unusable_password()
+        user.save(update_fields=['password'])
+
+        order.joined_users.add(user)
+        AuditLog.objects.create(order=order, user=user, action='user_joined',
+                                details={'username': username, 'quick_join': True})
+        notify_users(
+            [order.collector],
+            f'{name} joined your order {order.code} at {order.restaurant.name}.',
+            order=order,
+            notification_type='order_joined',
+        )
+        broadcast_order_update(order)
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'user': UserSerializer(user, context={'request': request}).data,
+            'order_code': order.code,
+        }, status=status.HTTP_201_CREATED)
 
 
 class RegisterView(APIView):
@@ -696,6 +753,44 @@ class CollectionOrderViewSet(viewsets.ModelViewSet):
             broadcast_order_update(order)
 
         return Response(CollectionOrderSerializer(order, context={'request': request}).data)
+
+    @action(detail=True, methods=['get'])
+    def talabat_sheet(self, request, pk=None):
+        """Aggregated, Talabat-ready order sheet for the collector: every
+        distinct item with total quantity and per-person notes, plus the
+        restaurant's Talabat link — so placing the real order is copy-and-go."""
+        order = self.get_object()
+
+        aggregated = {}
+        for item in order.items.select_related('menu_item', 'user').all():
+            name = item.menu_item.name if item.menu_item else item.custom_name
+            entry = aggregated.setdefault(name, {'name': name, 'quantity': 0, 'notes': []})
+            entry['quantity'] += item.quantity
+            if item.note:
+                entry['notes'].append(f'{item.user.username}: {item.note}')
+        items = sorted(aggregated.values(), key=lambda x: x['name'].lower())
+
+        if order.menu and order.menu.talabat_url:
+            talabat_url = order.menu.talabat_url
+        else:
+            menu = order.restaurant.menus.filter(talabat_url__isnull=False).exclude(talabat_url='').first()
+            talabat_url = menu.talabat_url if menu else None
+
+        lines = [f'🛵 {order.restaurant.name} — order {order.code}', '']
+        for entry in items:
+            lines.append(f'{entry["quantity"]}× {entry["name"]}')
+            for note in entry['notes']:
+                lines.append(f'   ↳ {note}')
+        lines.append('')
+        lines.append(f'Items total: {order.get_total_items_cost()} EGP')
+
+        return Response({
+            'restaurant': order.restaurant.name,
+            'talabat_url': talabat_url,
+            'items': items,
+            'total_items_cost': str(order.get_total_items_cost()),
+            'sheet_text': '\n'.join(lines),
+        })
 
     @action(detail=False, methods=['get'])
     def by_code(self, request):
@@ -1653,6 +1748,23 @@ class FeePresetViewSet(viewsets.ModelViewSet):
     queryset = FeePreset.objects.all()
     serializer_class = FeePresetSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+
+class RecurringOrderViewSet(viewsets.ModelViewSet):
+    """Schedules that auto-open daily orders (see open_recurring_orders task).
+    Users manage their own; managers/admins see all."""
+    serializer_class = RecurringOrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        from .models import RecurringOrder
+        qs = RecurringOrder.objects.select_related('restaurant', 'menu', 'collector')
+        if self.request.user.role in ['manager', 'admin']:
+            return qs
+        return qs.filter(collector=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(collector=self.request.user)
 
 
 class RecommendationViewSet(viewsets.ModelViewSet):

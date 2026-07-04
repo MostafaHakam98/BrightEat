@@ -18,6 +18,7 @@ export REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
 export REDIS_PORT="${REDIS_PORT:-6379}"
 export USE_HTTPS=False
 PYTHON="${PYTHON:-python}"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
 
 echo "── Preparing e2e database (${DB_NAME}) ──"
 if command -v psql >/dev/null; then
@@ -48,16 +49,16 @@ print('e2e fixtures ready')
 PYEOF
 
 echo "── Starting backend on :8000 ──"
-$PYTHON -m uvicorn OrderQ.asgi:application --host 127.0.0.1 --port 8000 &
+$PYTHON -m uvicorn OrderQ.asgi:application --host 127.0.0.1 --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 trap 'kill $BACKEND_PID 2>/dev/null || true' EXIT
 
 for i in $(seq 1 30); do
-  curl -sf http://127.0.0.1:8000/health/ >/dev/null && break
+  curl -sf http://127.0.0.1:$BACKEND_PORT/health/ >/dev/null && break
   sleep 1
 done
-curl -sf http://127.0.0.1:8000/health/ >/dev/null || { echo "backend failed to start"; exit 1; }
+curl -sf http://127.0.0.1:$BACKEND_PORT/health/ >/dev/null || { echo "backend failed to start"; exit 1; }
 
 echo "── Running Playwright ──"
 cd frontend
-VITE_PROXY_TARGET=http://127.0.0.1:8000 npx playwright test "$@"
+VITE_PROXY_TARGET=http://127.0.0.1:$BACKEND_PORT npx playwright test "$@"

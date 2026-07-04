@@ -47,13 +47,35 @@ test('golden path: login, create order, add item, lock', async ({ page }) => {
   await expect(page.getByText(/locked/i).first()).toBeVisible({ timeout: 15_000 })
 })
 
-test('invite link deep-links through login', async ({ page }) => {
-  await page.goto('/join/ZZZZ99')
-  // Unauthenticated: lands on login with ?next preserved
-  await expect(page).toHaveURL(/\/login\?next=(%2F|\/)join(%2F|\/)ZZZZ99/)
+test('protected routes deep-link through login via ?next', async ({ page }) => {
+  await page.goto('/pending-payments')
+  await expect(page).toHaveURL(/\/login\?next=(%2F|\/)pending-payments/)
   await page.getByPlaceholder('Username or Email').fill('e2e_collector')
   await page.getByPlaceholder('Password').fill('testpass123')
   await page.getByRole('button', { name: /sign in/i }).click()
-  // Lands back on the join page (order doesn't exist → not-found state, which is fine)
-  await expect(page).toHaveURL(/\/join\/ZZZZ99/, { timeout: 15_000 })
+  await expect(page).toHaveURL(/\/pending-payments/, { timeout: 15_000 })
+})
+
+test('guest quick-join: invite link → name → placed in the order', async ({ page }) => {
+  // Arrange an OPEN order via the API (collector creates it)
+  const login = await page.request.post('/api/auth/login/', {
+    data: { username: 'e2e_collector', password: 'testpass123' },
+  })
+  const { access } = await login.json()
+  const auth = { Authorization: `Bearer ${access}` }
+  const restaurants = await (await page.request.get('/api/restaurants/', { headers: auth })).json()
+  const list = restaurants.results || restaurants
+  const diner = list.find(r => r.name === 'E2E Diner')
+  const order = await (await page.request.post('/api/orders/', {
+    headers: auth, data: { restaurant: diner.id },
+  })).json()
+
+  // Act: an anonymous visitor opens the invite link and joins with just a name
+  await page.goto(`/join/${order.code}`)
+  await page.getByPlaceholder('e.g. Sara').fill('Guest Omar')
+  await page.getByRole('button', { name: /join in seconds/i }).click()
+
+  // Assert: lands authenticated on the order page
+  await expect(page).toHaveURL(new RegExp(`/orders/${order.code}`), { timeout: 15_000 })
+  await expect(page.getByText(/e2e diner/i).first()).toBeVisible()
 })

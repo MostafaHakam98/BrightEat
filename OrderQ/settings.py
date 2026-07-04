@@ -175,6 +175,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_CLASSES': [],
     'DEFAULT_THROTTLE_RATES': {
         'login': '10/minute',
+        # Guest account creation via invite links — tight per-IP cap
+        'quick_join': '20/hour',
     },
 }
 
@@ -268,6 +270,10 @@ CELERY_BEAT_SCHEDULE = {
     'purge-old-records': {
         'task': 'purge_old_records',
         'schedule': crontab(hour=4, minute=0),  # daily retention sweep
+    },
+    'open-recurring-orders': {
+        'task': 'open_recurring_orders',
+        'schedule': 60.0,  # every minute
     },
 }
 

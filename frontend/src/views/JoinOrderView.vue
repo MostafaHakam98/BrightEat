@@ -1,7 +1,50 @@
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 py-12">
+    <!-- Guest quick-join hero (no account needed) -->
+    <div v-if="!authStore.isAuthenticated" class="w-full max-w-md">
+      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-6 text-white text-center">
+          <h1 class="text-2xl font-bold">Join the food order 🍽</h1>
+          <p class="text-sm opacity-90 mt-2">
+            Your team is ordering together on OrderQ. Type your name and you're in —
+            no sign-up, no password.
+          </p>
+        </div>
+        <form @submit.prevent="quickJoin" class="px-6 py-6 space-y-4">
+          <div>
+            <label for="quick-join-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Your name
+            </label>
+            <input
+              id="quick-join-name"
+              ref="nameInput"
+              v-model="guestName"
+              type="text"
+              required
+              autofocus
+              autocomplete="name"
+              placeholder="e.g. Sara"
+              class="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+          <p v-if="quickJoinError" class="text-sm text-red-600 dark:text-red-400">{{ quickJoinError }}</p>
+          <BaseButton type="submit" block size="lg" :loading="quickJoining" :disabled="!guestName.trim()">
+            Join in seconds
+          </BaseButton>
+          <p class="text-center text-xs text-gray-400 dark:text-gray-500">
+            <router-link
+              :to="`/login?next=/join/${routeCode}`"
+              class="hover:text-indigo-600 dark:hover:text-indigo-400 underline"
+            >
+              Have an account? Sign in
+            </router-link>
+          </p>
+        </form>
+      </div>
+    </div>
+
     <!-- Loading -->
-    <div v-if="loading" class="text-center">
+    <div v-else-if="loading" class="text-center">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
       <p class="text-gray-600 dark:text-gray-400">Loading order...</p>
     </div>
@@ -103,17 +146,47 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useOrdersStore } from '../stores/orders'
+import { useAuthStore } from '../stores/auth'
+import { useToast } from '../composables/useToast'
+import BaseButton from '../components/ui/BaseButton.vue'
 
 const route = useRoute()
 const router = useRouter()
 const ordersStore = useOrdersStore()
+const authStore = useAuthStore()
+const toast = useToast()
 
 const loading = ref(true)
 const error = ref(null)
 const order = ref(null)
+
+const routeCode = computed(() => (route.params.code || '').toUpperCase())
+
+// Guest quick-join (unauthenticated) state
+const nameInput = ref(null)
+const guestName = ref('')
+const quickJoining = ref(false)
+const quickJoinError = ref(null)
+
+async function quickJoin() {
+  const name = guestName.value.trim()
+  if (!name || quickJoining.value) return
+  quickJoining.value = true
+  quickJoinError.value = null
+  const result = await authStore.quickJoin(name, routeCode.value)
+  quickJoining.value = false
+  if (result.success) {
+    // isAuthenticated just flipped — keep the spinner up while we navigate
+    loading.value = true
+    router.push(`/orders/${result.order_code}`)
+  } else {
+    quickJoinError.value = result.error
+    toast.error(result.error)
+  }
+}
 
 const statusBadgeClass = computed(() => {
   const s = order.value?.status
@@ -142,7 +215,15 @@ async function joinOrder() {
 }
 
 onMounted(async () => {
-  const code = route.params.code?.toUpperCase()
+  // Guests can't fetch the order preview — show the quick-join hero instead
+  if (!authStore.isAuthenticated) {
+    loading.value = false
+    await nextTick()
+    nameInput.value?.focus()
+    return
+  }
+
+  const code = routeCode.value
   if (!code) {
     error.value = 'No order code provided.'
     loading.value = false

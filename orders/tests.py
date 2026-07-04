@@ -689,3 +689,170 @@ class OpenMenuAccessTest(TestCase):
             'service_fee': '0.00', 'fee_split_rule': 'equal',
         }, format='json')
         self.assertEqual(res.status_code, 201)
+
+
+class QuickJoinTest(TestCase):
+    """Frictionless guest join: name + code → account + roster + JWTs."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.collector = make_user('collector')
+        self.restaurant = Restaurant.objects.create(name='R', created_by=self.collector)
+        self.order = CollectionOrder.objects.create(
+            restaurant=self.restaurant, collector=self.collector)
+
+    def test_quick_join_creates_guest_and_joins(self):
+        res = self.client.post('/api/auth/quick-join/',
+                               {'name': 'Omar', 'code': self.order.code}, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertIn('access', res.data)
+        self.assertEqual(res.data['order_code'], self.order.code)
+
+        guest = User.objects.get(id=res.data['user']['id'])
+        self.assertEqual(guest.first_name, 'Omar')
+        self.assertFalse(guest.has_usable_password())
+        self.assertTrue(self.order.joined_users.filter(id=guest.id).exists())
+        # Collector hears about it
+        self.assertTrue(Notification.objects.filter(
+            user=self.collector, notification_type='order_joined',
+            message__icontains='Omar').exists())
+
+        # The returned token actually works
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+        me = self.client.get('/api/users/me/')
+        self.assertEqual(me.status_code, 200)
+
+    def test_quick_join_rejected_for_closed_order(self):
+        self.order.status = 'LOCKED'
+        self.order.save()
+        res = self.client.post('/api/auth/quick-join/',
+                               {'name': 'Omar', 'code': self.order.code}, format='json')
+        self.assertEqual(res.status_code, 400)
+
+    def test_quick_join_rejected_for_private_order(self):
+        other = make_user('other')
+        self.order.assigned_users.add(other)
+        res = self.client.post('/api/auth/quick-join/',
+                               {'name': 'Omar', 'code': self.order.code}, format='json')
+        self.assertEqual(res.status_code, 403)
+
+    def test_quick_join_unknown_code(self):
+        res = self.client.post('/api/auth/quick-join/',
+                               {'name': 'Omar', 'code': 'ZZZZZZ'}, format='json')
+        self.assertEqual(res.status_code, 404)
+
+
+class TalabatSheetTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.collector = make_user('collector')
+        self.alice = make_user('alice')
+        self.restaurant = Restaurant.objects.create(name='R', created_by=self.collector)
+        self.menu = Menu.objects.create(restaurant=self.restaurant, name='M',
+                                        talabat_url='https://www.talabat.com/egypt/restaurant/1/r')
+        self.burger = MenuItem.objects.create(menu=self.menu, name='Burger', price=Decimal('50.00'))
+        self.order = CollectionOrder.objects.create(
+            restaurant=self.restaurant, menu=self.menu, collector=self.collector)
+        OrderItem.objects.create(order=self.order, user=self.collector, menu_item=self.burger,
+                                 quantity=1, unit_price=Decimal('50.00'))
+        OrderItem.objects.create(order=self.order, user=self.alice, menu_item=self.burger,
+                                 quantity=2, unit_price=Decimal('50.00'), note='no pickles')
+
+    def test_sheet_aggregates_quantities_and_notes(self):
+        token = get_token(self.client, 'collector')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        res = self.client.get(f'/api/orders/{self.order.id}/talabat_sheet/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['talabat_url'], self.menu.talabat_url)
+        self.assertEqual(len(res.data['items']), 1)
+        self.assertEqual(res.data['items'][0]['quantity'], 3)
+        self.assertIn('alice: no pickles', res.data['items'][0]['notes'])
+        self.assertIn('3× Burger', res.data['sheet_text'])
+
+
+class RecurringOrderTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.collector = make_user('collector')
+        self.restaurant = Restaurant.objects.create(name='R', created_by=self.collector)
+
+    def _due_schedule(self, **kwargs):
+        from orders.models import RecurringOrder
+        now_local = timezone.localtime()
+        defaults = dict(
+            collector=self.collector, restaurant=self.restaurant,
+            open_at=(now_local - timedelta(minutes=5)).time(),
+            weekdays=str(now_local.weekday()),
+            cutoff_after_minutes=45,
+        )
+        defaults.update(kwargs)
+        return RecurringOrder.objects.create(**defaults)
+
+    def test_due_schedule_opens_order_once(self):
+        from orders.tasks import open_recurring_orders
+        schedule = self._due_schedule()
+        result = open_recurring_orders()
+        self.assertEqual(result['opened'], 1)
+        order = CollectionOrder.objects.get(restaurant=self.restaurant, status='OPEN')
+        self.assertEqual(order.collector, self.collector)
+        self.assertIsNotNone(order.cutoff_time)
+        # everyone got told
+        self.assertTrue(Notification.objects.filter(
+            message__icontains=order.code).exists())
+        # second run same day: no duplicate
+        self.assertEqual(open_recurring_orders()['opened'], 0)
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.last_run_date, timezone.localtime().date())
+
+    def test_wrong_weekday_does_not_open(self):
+        from orders.tasks import open_recurring_orders
+        wrong = (timezone.localtime().weekday() + 1) % 7
+        self._due_schedule(weekdays=str(wrong))
+        self.assertEqual(open_recurring_orders()['opened'], 0)
+
+    def test_api_scopes_to_owner(self):
+        client = APIClient()
+        self._due_schedule()
+        other = make_user('other')
+        token = get_token(client, 'other')
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        res = client.get('/api/recurring-orders/')
+        data = res.data['results'] if isinstance(res.data, dict) else res.data
+        self.assertEqual(len(data), 0)
+
+        res = client.post('/api/recurring-orders/', {
+            'restaurant': self.restaurant.id, 'open_at': '11:00',
+            'weekdays': '6,0,1,2,3', 'cutoff_after_minutes': 45,
+        }, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data['collector_name'], 'other')
+
+
+class SettleMessageTest(TestCase):
+    def test_settle_message_lists_debtors_and_instapay(self):
+        cache.clear()
+        client = APIClient()
+        collector = make_user('collector')
+        collector.instapay_link = 'https://ipn.eg/S/collector/instapay/123'
+        collector.first_name = 'Mostafa'
+        collector.save()
+        alice = make_user('alice')
+        restaurant = Restaurant.objects.create(name='R', created_by=collector)
+        menu = Menu.objects.create(restaurant=restaurant, name='M')
+        item = MenuItem.objects.create(menu=menu, name='X', price=Decimal('50.00'))
+        order = CollectionOrder.objects.create(restaurant=restaurant, collector=collector)
+        OrderItem.objects.create(order=order, user=alice, menu_item=item,
+                                 quantity=1, unit_price=item.price)
+
+        token = get_token(client, 'collector')
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        client.post(f'/api/orders/{order.id}/lock/')
+
+        res = client.get(f'/api/orders/{order.id}/')
+        msg = res.data['settle_message']
+        self.assertIn('alice', msg)
+        self.assertIn('EGP', msg)
+        self.assertIn('ipn.eg', msg)
+        self.assertIn('⏳', msg)

@@ -199,13 +199,41 @@ Instapay confirmation is manual/self-reported. Options to explore (Egypt market)
 
 ---
 
+## Adoption wave (2026-07-04) — beating the WhatsApp default
+
+Root cause of drop-off: joining took too many steps vs typing in the group chat. Shipped counter-measures:
+
+- [x] **Frictionless invite join** — `/join/CODE` no longer requires an account: a name is enough
+  (`POST /auth/quick-join/` creates a throttled guest identity, joins the roster, returns JWTs).
+  WhatsApp link → placed order in seconds.
+- [x] **Scheduled/recurring orders** — `RecurringOrder` model + minute-beat task auto-opens the daily order
+  (Egypt-workweek default, auto-cutoff N minutes later) and notifies everyone; managed from Home.
+  Nobody has to remember to start lunch.
+- [x] **"My usual" hero banner** — joiners with no items yet get a one-tap "add your usual" banner.
+- [x] **Settle-up receipt** — WhatsApp-ready per-person breakdown (`settle_message`: paid ✅ / owing ⏳ +
+  collector's Instapay link) with copy + wa.me share; the collector nags the group once, not each person.
+- [x] **Talabat handoff sheet** — `GET /orders/{id}/talabat_sheet/`: aggregated qty×item list with per-person
+  notes + the restaurant's Talabat link, copy-ready for placing the real order. (True auto-placement on
+  Talabat would require automating logged-in accounts with payment access — ToS-hostile; not pursued.)
+
+## Talabat scraping (2026-07-04) — fixed and hardened
+
+Diagnosis: Cloudflare hard-blocks the EC2 datacenter IP (plain 403 even with a perfect Chrome TLS
+fingerprint); the old FlareSolverr v3.3.21 (Chrome 120) could no longer solve the interactive challenge.
+
+- [x] FlareSolverr pinned to **v3.5.0** (Chrome 148) — solves the challenge again (~12 s).
+- [x] **Session mint-and-reuse pipeline** in the scraper: solve once via FlareSolverr, then plain
+  sub-second fetches with the minted cookies + UA (cached per worker process); the solved hydrated page
+  lacking `__NEXT_DATA__` is handled by re-fetching raw HTML with the session.
+- [x] Sync-failure UX points users at manual item entry (menus are user-editable by everyone now).
+- [ ] Scraper resilience extras: alerting on repeated sync failures, snapshot tests against fixture HTML.
+
 ## Deferred / nice-to-have
 
-- [ ] Scheduled/recurring orders ("every day at 11:00 open a lunch order from X").
 - [x] Favorites & one-tap reorder — "Add my usual" replays your last order at that restaurant
   (`GET /restaurants/{id}/my_usual/`).
 - [ ] Order templates per team.
 - [ ] Collector rotation suggestions (fairness stats exist in reports already).
 - [x] Menu item photos in the picker (Talabat `image_url` was already scraped and stored — now rendered).
 - [ ] Slack/Teams webhook integration for order-opened announcements (WhatsApp share text exists).
-- [ ] Talabat scraper resilience: alerting on sync failures, snapshot tests against fixture HTML.
+- [ ] Guest-account hygiene: periodic cleanup/merge of inactive `quick-join` guests.

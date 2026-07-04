@@ -46,7 +46,8 @@ const router = createRouter({
       path: '/join/:code',
       name: 'JoinOrder',
       component: () => import('../views/JoinOrderView.vue'),
-      meta: { requiresAuth: true },
+      // Public: guests land here from invite links and can quick-join
+      meta: { requiresAuth: false },
     },
     {
       path: '/restaurants',

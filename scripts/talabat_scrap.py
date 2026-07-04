@@ -183,8 +183,19 @@ def _is_cloudflare_block(status_code: int, headers: dict, html: str) -> bool:
     )
 
 
-def fetch_via_flaresolverr(url: str, flaresolverr_url: str, timeout_ms: int = 60000) -> str:
-    """Use FlareSolverr to bypass Cloudflare challenges."""
+# Cloudflare session minted by FlareSolverr, reused across fetches in this
+# process (a Celery worker lives long, so sync-all pays the ~12s solve once
+# and every subsequent page fetch is a plain sub-second request).
+_FS_SESSION: Dict[str, Any] = {"cookies": None, "user_agent": None}
+
+
+def fetch_via_flaresolverr(url: str, flaresolverr_url: str, timeout_ms: int = 60000) -> Dict[str, Any]:
+    """Use FlareSolverr to solve the Cloudflare challenge.
+
+    Returns {'html': str, 'cookies': {name: value}, 'user_agent': str}.
+    Note: the solved page is the *hydrated* DOM and may lack __NEXT_DATA__;
+    callers should re-fetch the raw HTML with the returned cookies + UA.
+    """
     payload = {"cmd": "request.get", "url": url, "maxTimeout": timeout_ms}
     resp = requests.post(
         f"{flaresolverr_url}/v1",
@@ -195,10 +206,63 @@ def fetch_via_flaresolverr(url: str, flaresolverr_url: str, timeout_ms: int = 60
     data = resp.json()
     if data.get("status") != "ok":
         raise RuntimeError(f"FlareSolverr error: {data.get('message', 'unknown')}")
-    html = data.get("solution", {}).get("response", "")
-    if not html:
-        raise RuntimeError("FlareSolverr returned empty response")
-    return html
+    solution = data.get("solution", {})
+    return {
+        "html": solution.get("response", "") or "",
+        "cookies": {c["name"]: c["value"] for c in (solution.get("cookies") or [])},
+        "user_agent": solution.get("userAgent", "") or "",
+    }
+
+
+def _refetch_with_session(url: str, cookies: Dict[str, str], user_agent: str, timeout: int) -> Optional[str]:
+    """Plain GET with a solved Cloudflare session (cookies + matching UA).
+    Returns raw server HTML (which includes __NEXT_DATA__) or None."""
+    try:
+        resp = requests.get(url, timeout=timeout, allow_redirects=True, cookies=cookies, headers={
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        })
+        if resp.status_code == 200 and "__next_data__" in resp.text.lower():
+            return resp.text
+    except Exception as e:
+        print(f"[warn] Session refetch failed: {e}")
+    return None
+
+
+def _fetch_via_flaresolverr_pipeline(url: str, flaresolverr_url: str, timeout: int) -> str:
+    """Full challenge-solving pipeline with session reuse:
+    1. If we already hold a solved session, try a fast plain refetch with it.
+    2. Otherwise (or if stale) mint a fresh session via FlareSolverr.
+    3. Use the solved HTML directly if it has __NEXT_DATA__, else refetch raw
+       HTML with the minted cookies + UA (the solved page is post-hydration
+       and usually lacks the script tag).
+    """
+    if _FS_SESSION["cookies"]:
+        html = _refetch_with_session(url, _FS_SESSION["cookies"], _FS_SESSION["user_agent"], timeout)
+        if html:
+            print("[info] Reused cached Cloudflare session (fast path).")
+            return html
+        _FS_SESSION["cookies"] = None  # stale — re-mint below
+
+    print("[info] Solving Cloudflare challenge via FlareSolverr…")
+    solved = fetch_via_flaresolverr(url, flaresolverr_url, timeout_ms=max(60000, timeout * 1000))
+    _FS_SESSION["cookies"] = solved["cookies"] or None
+    _FS_SESSION["user_agent"] = solved["user_agent"]
+
+    if solved["html"] and len(solved["html"]) >= 1000 and "__next_data__" in solved["html"].lower():
+        return solved["html"]
+
+    if solved["cookies"]:
+        html = _refetch_with_session(url, solved["cookies"], solved["user_agent"], timeout)
+        if html:
+            print("[info] Fetched raw HTML with FlareSolverr-minted session.")
+            return html
+
+    raise RuntimeError(
+        "FlareSolverr solved the challenge but no __NEXT_DATA__ was reachable "
+        "(page structure may have changed)"
+    )
 
 
 def fetch_html_with_retries(
@@ -249,11 +313,7 @@ def fetch_html_with_retries(
                 if flaresolverr_url:
                     print(f"[info] Cloudflare block (HTTP {resp.status_code}), trying FlareSolverr...")
                     try:
-                        fs_html = fetch_via_flaresolverr(url, flaresolverr_url, timeout_ms=timeout * 1000)
-                        if fs_html and len(fs_html) >= 1000 and "__next_data__" in fs_html.lower():
-                            print("[info] FlareSolverr succeeded.")
-                            return fs_html
-                        raise RuntimeError("FlareSolverr returned a page without __NEXT_DATA__")
+                        return _fetch_via_flaresolverr_pipeline(url, flaresolverr_url, timeout)
                     except Exception as fs_err:
                         raise RuntimeError(f"FlareSolverr also failed: {fs_err}") from fs_err
                 raise RuntimeError(

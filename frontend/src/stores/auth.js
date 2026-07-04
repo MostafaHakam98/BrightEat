@@ -38,6 +38,33 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // Frictionless invite join: creates a guest account and joins the order in
+  // one call. Stores tokens exactly like login so App.vue's isAuthenticated
+  // watcher (live notifications, tab title) picks up the change.
+  async function quickJoin(name, code) {
+    try {
+      const response = await api.post('/auth/quick-join/', { name, code })
+      const { access, refresh, user: joinedUser, order_code } = response.data
+
+      token.value = access
+      refreshToken.value = refresh
+      localStorage.setItem('access_token', access)
+      localStorage.setItem('refresh_token', refresh)
+
+      if (joinedUser) {
+        user.value = joinedUser
+      } else {
+        await fetchUser()
+      }
+      return { success: true, order_code }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || error.response?.data?.detail || 'Could not join this order',
+      }
+    }
+  }
+
   async function register(userData) {
     try {
       await api.post('/auth/register/', userData)
@@ -120,6 +147,7 @@ export const useAuthStore = defineStore('auth', () => {
     isManager,
     isAdmin,
     login,
+    quickJoin,
     register,
     logout,
     fetchUser,

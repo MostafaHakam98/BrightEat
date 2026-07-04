@@ -9,6 +9,7 @@ export const useOrdersStore = defineStore('orders', () => {
   const menus = ref([])
   const menuItems = ref([])
   const feePresets = ref([])
+  const recurringOrders = ref([])
 
   async function fetchOrders(status = null) {
     try {
@@ -127,6 +128,60 @@ export const useOrdersStore = defineStore('orders', () => {
     try {
       const response = await api.get(`/restaurants/${restaurantId}/my_usual/`)
       return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  // Aggregated per-item sheet the collector pastes into Talabat
+  async function fetchTalabatSheet(orderId) {
+    try {
+      const response = await api.get(`/orders/${orderId}/talabat_sheet/`)
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  // --- Recurring (scheduled) orders ---
+  async function fetchRecurringOrders() {
+    try {
+      const response = await api.get('/recurring-orders/')
+      recurringOrders.value = response.data.results || response.data
+      return { success: true, data: recurringOrders.value }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  async function createRecurringOrder(scheduleData) {
+    try {
+      const response = await api.post('/recurring-orders/', scheduleData)
+      recurringOrders.value.push(response.data)
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  async function updateRecurringOrder(scheduleId, scheduleData) {
+    try {
+      const response = await api.patch(`/recurring-orders/${scheduleId}/`, scheduleData)
+      const index = recurringOrders.value.findIndex(s => s.id === scheduleId)
+      if (index !== -1) {
+        recurringOrders.value[index] = response.data
+      }
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
+  async function deleteRecurringOrder(scheduleId) {
+    try {
+      await api.delete(`/recurring-orders/${scheduleId}/`)
+      recurringOrders.value = recurringOrders.value.filter(s => s.id !== scheduleId)
+      return { success: true }
     } catch (error) {
       return { success: false, error: error.response?.data }
     }
@@ -389,6 +444,7 @@ export const useOrdersStore = defineStore('orders', () => {
     menus,
     menuItems,
     feePresets,
+    recurringOrders,
     fetchOrders,
     fetchOrderByCode,
     joinOrder,
@@ -396,6 +452,11 @@ export const useOrdersStore = defineStore('orders', () => {
     confirmPaymentProof,
     rejectPaymentProof,
     fetchMyUsual,
+    fetchTalabatSheet,
+    fetchRecurringOrders,
+    createRecurringOrder,
+    updateRecurringOrder,
+    deleteRecurringOrder,
     addRestaurantFromTalabat,
     syncRestaurantMenu,
     pollTaskStatus,
