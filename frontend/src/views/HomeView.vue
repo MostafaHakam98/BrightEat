@@ -203,15 +203,11 @@
             <BaseBadge :color="order.status">{{ order.status }}</BaseBadge>
           </div>
 
-          <dl class="mt-2.5 space-y-1 text-sm text-gray-600 dark:text-gray-400">
-            <div class="flex items-center gap-1.5">
-              <dt class="text-gray-400 dark:text-gray-500">Code</dt>
-              <dd class="font-mono text-xs font-semibold tracking-wider text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/70 rounded px-1.5 py-0.5">{{ order.code }}</dd>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <dt class="text-gray-400 dark:text-gray-500">Collector</dt>
-              <dd class="truncate">{{ order.collector_name }}</dd>
-            </div>
+          <dl class="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+            <dt class="text-gray-400 dark:text-gray-500">Code</dt>
+            <dd class="justify-self-start font-mono text-xs font-semibold tracking-wider text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/70 rounded px-1.5 py-0.5">{{ order.code }}</dd>
+            <dt class="text-gray-400 dark:text-gray-500">Collector</dt>
+            <dd class="truncate">{{ order.collector_name }}</dd>
           </dl>
 
           <div class="mt-2.5 flex flex-wrap items-center gap-2">
