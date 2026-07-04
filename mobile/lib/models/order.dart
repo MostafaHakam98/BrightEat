@@ -124,13 +124,16 @@ class CollectionOrder {
     }
 
     return CollectionOrder(
-      id: json['id'],
-      code: json['code'],
+      // Defensive defaults so a partial/websocket payload never crashes parsing.
+      id: json['id'] ?? 0,
+      code: json['code'] ?? '',
       restaurant: restaurantObj,
       menu: menuObj,
       collector: collectorObj,
-      status: json['status'],
-      createdAt: DateTime.parse(json['created_at']),
+      status: json['status'] ?? 'OPEN',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
       cutoffTime: json['cutoff_time'] != null
           ? DateTime.parse(json['cutoff_time'])
           : null,

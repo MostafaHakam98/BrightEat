@@ -10,6 +10,13 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partially done / in progress.
 > **Product decision 2026-07-04:** restaurants, menus, menu items, fee presets, and the Talabat
 > scraper are open to ALL authenticated users (previously manager/admin-only). Admin-only remains:
 > user management, registration, role changes.
+>
+> **On the remaining unticked boxes:** they are intentionally open, not forgotten. They fall into three
+> buckets — (1) **strategic epics** (multi-tenancy, full Arabic sweep + RTL audit, native app feature parity)
+> that are multi-week tracks to schedule deliberately; (2) **needs-your-input / external accounts** (create a
+> Sentry project + set the DSN, provide S3/rclone creds for offsite backups); (3) **low-value polish**
+> (legacy-modal a11y migration, money-as-string-decimal, `MicrosoftCallbackView` stub). Nothing here is a
+> production blocker — the shipped app is complete and live.
 
 Tiers are ordered by user impact per unit of effort:
 
@@ -76,7 +83,8 @@ Tiers are ordered by user impact per unit of effort:
 - [x] **Strip production `console.log`s** — the `order` computed in OrderDetail logged on every render.
 - [x] **Offline fallback page** (custom SW `setCatchHandler` → precached `offline.html`); duplicate static
   `manifest.json` removed (vite-plugin-pwa's `manifest.webmanifest` is the single source).
-- [ ] **Reorder flow race** — menu pre-selection from `/?restaurant=&menu=` depends on `onRestaurantChange()` timing.
+- [x] **Reorder flow race** — resolved: HomeView `await`s `onRestaurantChange()` before setting the menu, so the
+  option exists when pre-selected.
 - [~] **A11y pass on custom modals** — the shared `BaseModal` (focus trap, `aria-modal`, Esc, focus restore) now
   exists and every *new* dialog uses it. Still open:
   - [ ] Migrate the legacy Add-to-Menu / Menu-Item / Restaurant / Edit-User plain-`<div>` modals to `BaseModal`;
@@ -111,9 +119,11 @@ Tiers are ordered by user impact per unit of effort:
 - [x] **Retention/archival policy for `AuditLog` and `Notification`** — daily beat sweep, 90/365 days,
   env-tunable (`NOTIFICATION_RETENTION_DAYS`/`AUDIT_LOG_RETENTION_DAYS`).
 - [x] **Timezone handling** — `share_message` now uses `zoneinfo` with `settings.TIME_ZONE`.
-- [~] **Remove dead code:** `msal` dep and Vite starter files (HelloWorld.vue, logos) removed. Still open:
-  - [ ] `MicrosoftCallbackView` stub and vestigial `CollectionOrder.instapay_link` field (needs a migration +
-    client sweep).
+- [~] **Remove dead code:** `msal` dep and Vite starter files (HelloWorld.vue, logos) removed; Flutter orphan
+  `main_navigation_screen.dart` + stale template test removed. Still open:
+  - [ ] `MicrosoftCallbackView` stub (harmless no-op kept so the SSO URL doesn't 404 — low priority).
+  - Note: `CollectionOrder.instapay_link` is NOT vestigial after all — it's the per-order Instapay override
+    used by the fee-editing form, distinct from the collector's user-level link. Keep it.
 - [x] **Staging environment + versioned releases** — `docker-compose.staging.yml` override (own project name,
   volumes, ports 29991/29992, `.env.staging`), `IMAGE_TAG`-parameterized prod images, `make release TAG=vX.Y.Z`
   builds+tags images and a git tag; rollback = point `IMAGE_TAG` back and `make prod-up`.
@@ -135,7 +145,7 @@ backend, global restaurants/menus. To ship anywhere else:
 - [ ] **Pluggable auth per tenant.** Local accounts by default; SSO becomes per-tenant configuration
   (issuer, client id, allowed email domains) instead of the Hive-specific flow. Hive/Microsoft becomes one
   provider implementation among several (generic OIDC covers most companies).
-  - [x] First step (done): allowed SSO email domain moved from hardcoded string to `HIVE_ALLOWED_EMAIL_DOMAINS`
+  - [x] First step (done): allowed SSO email domain moved from hardcoded string to `SSO_ALLOWED_EMAIL_DOMAINS`
     env setting.
 - [ ] **Tenant onboarding flow** — create org, invite members (email invite links), org-scoped join codes.
 - [ ] **Per-tenant branding/config** — name, logo, currency (EGP hardcoded today), timezone, payment rails
@@ -143,24 +153,37 @@ backend, global restaurants/menus. To ship anywhere else:
 - [ ] **Quotas & plans** (only if commercializing): org size limits, billing integration.
 - [ ] **Ops**: per-tenant admin, data export/delete per tenant (GDPR-shaped requests).
 
-### Epic: Frontend consolidation (Vue PWA vs Flutter PWA)
+### Epic: Frontend consolidation (Vue PWA) + native Android app
 
-Two full frontends are UA-routed alternates of the same product and already drifting (Flutter lacks SSO).
-Every feature costs double.
+Two web frontends were UA-routed alternates of the same product and drifting. Resolved by consolidating the
+**web** on the Vue PWA, and repurposing the Flutter codebase into a real **native Android app**.
 
-- [x] **Decision: Option A — consolidated on the Vue PWA.** nginx now routes all web traffic to `frontend`;
-  the Flutter containers still build/run but receive no traffic (revert instructions are commented in
-  `nginx-router.conf`). The Flutter codebase stays dormant as a base for future native builds.
-- [ ] Follow-through (later): stop building `flutter-pwa` in deploys once the consolidation has soaked;
-  eventually move `mobile/` to its own repo or archive it.
+- [x] **Web: consolidated on the Vue PWA.** nginx routes all web traffic to `frontend`; the Flutter *web*
+  container still builds/runs but receives no traffic (revert instructions commented in `nginx-router.conf`).
+- [x] **Native Android app shipped (v1.1.0).** The Flutter app now builds a distributable release APK:
+  - Certificate pinning (`lib/network/cert_pinning_io.dart`) trusts the production server's self-signed cert
+    by SHA-256 — a native HTTP client can't click through it like a browser, so this was the connectivity
+    blocker. **If the server cert is regenerated, update the pinned fingerprint.**
+  - Real `applicationId` (`com.orderq.mobile`), release keystore signing (`android/key.properties` +
+    `orderq-release.jks`, both git-ignored — **back these up; losing them blocks in-place updates**),
+    branded launcher icon generated from the OrderQ logo (`flutter_launcher_icons`).
+  - Join flow wired to `POST /orders/{id}/join/` (roster + collector notification), order model hardened
+    against missing core fields, orphan/stale files removed → `flutter analyze` reports 0 errors.
+- [ ] **Native feature parity (deferred, deliberate):** the Android app still lacks the web's payment-proof
+  UI, custom-split UI, `my_usual` button, and native background push (would need FCM + a Firebase project —
+  a real infra lift). In-app live notifications work over WebSocket while the app is open. Prioritize per
+  demand.
+- [ ] Follow-through (later): stop building the Flutter *web* image in deploys; consider moving `mobile/` to
+  its own repo.
 
 ### Epic: Arabic + RTL i18n
 
 Egyptian audience (EGP, Instapay, Talabat) with an English-only UI.
 
-- [x] `vue-i18n` scaffold: locale files (en/ar), persisted locale, `dir`/`lang` switching, language toggle in
-  the top bar. App shell (nav, sidebar, bell) and core strings translated; Arabic falls back to English for
-  untranslated keys, so partial coverage degrades gracefully.
+- [x] `vue-i18n` scaffold: locale files (en/ar), persisted locale, `dir`/`lang` switching, language selector in
+  **Profile → Preferences** (moved out of the top bar per user request). App shell (nav, sidebar, bell) and
+  core strings translated; Arabic falls back to English for untranslated keys, so partial coverage degrades
+  gracefully.
 - [ ] Extract + translate the remaining views (Home, OrderDetail, Reports, …) — mechanical `$t()` sweep.
 - [ ] RTL layout audit (directional paddings/margins/icons) once coverage is broad.
 - [ ] Locale-aware dates/numbers (`Intl`, `ar-EG`).

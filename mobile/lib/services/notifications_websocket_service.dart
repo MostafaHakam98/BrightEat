@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../network/ws_connect.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../config/app_config.dart';
@@ -45,9 +46,10 @@ class NotificationsWebSocketService {
       final wsUrl =
           '${AppConfig.wsBaseUrl}/ws/notifications/?token=${Uri.encodeComponent(token)}';
 
-      print('🔌 Connecting to notifications WebSocket: $wsUrl');
+      // Strip the ?token= query — never log the JWT.
+      print('🔌 Connecting to notifications WebSocket: ${wsUrl.split('?').first}');
 
-      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      _channel = connectWebSocket(wsUrl);
 
       _subscription = _channel!.stream.listen(
         (message) {

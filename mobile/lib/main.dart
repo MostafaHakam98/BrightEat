@@ -27,10 +27,14 @@ import 'screens/user_management_screen.dart';
 import 'screens/splash_screen.dart';
 import 'providers/notifications_provider.dart';
 import 'services/notification_service.dart';
+import 'network/cert_pinning.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // Trust the production server's self-signed cert (native builds only).
+  applyCertPinning();
+
   // Initialize shared preferences
   final prefs = await SharedPreferences.getInstance();
   

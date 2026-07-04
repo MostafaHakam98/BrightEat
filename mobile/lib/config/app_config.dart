@@ -26,6 +26,14 @@ class AppConfig {
     return productionUrl;
   }
 
+  /// HTTP origin of the backend (scheme://host:port, no /api). Native
+  /// WebSocket connections send this as the `Origin` header so the server's
+  /// AllowedHostsOriginValidator accepts them (browsers set Origin themselves).
+  static String get httpOrigin {
+    final base = apiBaseUrl;
+    return base.endsWith('/api') ? base.substring(0, base.length - '/api'.length) : base;
+  }
+
   /// WebSocket base URL (no /api suffix — nginx routes /ws at the root).
   /// e.g. wss://host:19991 → connect to '$wsBaseUrl/ws/orders/1/'.
   static String get wsBaseUrl {

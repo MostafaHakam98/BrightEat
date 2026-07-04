@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
@@ -28,65 +29,26 @@ class ApiService {
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }
-        // Debug: Print request details
-        final fullUrl = '${options.baseUrl}${options.path}';
-        print('📤 ========== REQUEST START ==========');
-        print('📤 Method: ${options.method}');
-        print('📤 Full URL: $fullUrl');
-        print('📤 Base URL: ${options.baseUrl}');
-        print('📤 Path: ${options.path}');
-        print('📤 Headers: ${options.headers}');
-        if (options.data != null) {
-          print('📤 Data: ${options.data}');
+        // Debug-only logging. NEVER log request bodies/headers in release —
+        // they contain passwords and bearer tokens.
+        if (kDebugMode) {
+          print('📤 ${options.method} ${options.baseUrl}${options.path}');
         }
-        print('📤 Query Parameters: ${options.queryParameters}');
-        print('📤 ========== REQUEST END ==========');
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        print('📥 Response: ${response.statusCode} ${response.statusMessage}');
-        // Log response data for menu items endpoint
-        if (response.requestOptions.path.contains('menu-items')) {
-          print('📥 Menu items response data type: ${response.data.runtimeType}');
-          print('📥 Menu items response data: ${response.data}');
-          if (response.data is Map) {
-            print('📥 Response keys: ${(response.data as Map).keys.toList()}');
-            if ((response.data as Map).containsKey('results')) {
-              print('📥 Results count: ${((response.data as Map)['results'] as List?)?.length ?? 0}');
-            }
-          } else if (response.data is List) {
-            print('📥 Response list length: ${(response.data as List).length}');
-          }
+        if (kDebugMode) {
+          print('📥 ${response.statusCode} ${response.requestOptions.path}');
         }
         return handler.next(response);
       },
       onError: (error, handler) async {
-        // Only log detailed errors for non-connection issues or important endpoints
-        final isConnectionError = error.type == DioExceptionType.connectionError ||
-            error.type == DioExceptionType.connectionTimeout ||
-            error.type == DioExceptionType.receiveTimeout;
-        
-        // For connection errors, use simpler logging
-        if (isConnectionError) {
-          print('⚠️ Connection error: ${error.requestOptions.path} - ${error.message}');
-        } else {
-          // Debug: Print error details for other errors
-          print('❌ ========== ERROR START ==========');
-          print('❌ Error Type: ${error.type}');
-          print('❌ Error Message: ${error.message}');
-          print('❌ Request URL: ${error.requestOptions.baseUrl}${error.requestOptions.path}');
-          print('❌ Request Method: ${error.requestOptions.method}');
-          if (error.response != null) {
-            print('❌ Response Status: ${error.response?.statusCode}');
-            print('❌ Response Data: ${error.response?.data}');
-            print('❌ Response Headers: ${error.response?.headers}');
-          } else {
-            print('❌ No response received (connection failed)');
-            print('❌ Error Object: ${error.error}');
-          }
-          print('❌ ========== ERROR END ==========');
+        if (kDebugMode) {
+          final status = error.response?.statusCode;
+          print('❌ ${error.type} ${error.requestOptions.path}'
+              '${status != null ? ' → $status' : ''}');
         }
-        
+
         // Handle 401 errors (token refresh)
         // Don't try to refresh if the failed request IS the refresh endpoint itself
         if (error.response?.statusCode == 401 && 
@@ -257,6 +219,10 @@ class ApiService {
 
   Future<Response> deleteOrder(int orderId) async {
     return _dio.delete('/orders/$orderId/');
+  }
+
+  Future<Response> joinOrder(int orderId) async {
+    return _dio.post('/orders/$orderId/join/');
   }
 
   Future<Response> getPendingPayments() async {
