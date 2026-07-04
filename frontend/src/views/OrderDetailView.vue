@@ -102,6 +102,29 @@
             </p>
           </div>
 
+          <!-- My-usual hero banner: one-tap re-add of the last order here -->
+          <div
+            v-if="showUsualBanner"
+            class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 rounded-2xl p-4 flex items-center justify-between gap-3"
+          >
+            <p class="text-sm font-semibold text-indigo-900 dark:text-indigo-200 min-w-0">
+              ⚡ Your usual from {{ currentOrder?.restaurant_name }}:
+              {{ usualItems.length }} item{{ usualItems.length === 1 ? '' : 's' }} — add in one tap
+            </p>
+            <div class="flex items-center gap-2 shrink-0">
+              <BaseButton size="sm" :loading="addingUsual" @click="addMyUsual">
+                Add my usual
+              </BaseButton>
+              <button
+                type="button"
+                @click="usualBannerDismissed = true"
+                class="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 text-xl leading-none px-1"
+                title="Dismiss"
+                aria-label="Dismiss"
+              >×</button>
+            </div>
+          </div>
+
           <!-- Add Items Section (only if OPEN) -->
           <div v-if="currentOrder?.status === 'OPEN'" class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Add Items to Order</h2>
@@ -409,6 +432,17 @@
             @delete="deleteOrder"
             @transfer="handleTransferRequest"
           />
+
+          <!-- Talabat handoff: aggregated sheet the collector pastes into the app -->
+          <BaseButton
+            v-if="canManage && ['LOCKED', 'ORDERED'].includes(currentOrder?.status)"
+            block
+            variant="secondary"
+            :loading="loadingTalabatSheet"
+            @click="openTalabatSheet"
+          >
+            🛵 Talabat order sheet
+          </BaseButton>
 
           <!-- Who's in -->
           <OrderRoster :order="currentOrder" />
@@ -722,6 +756,15 @@
                 </div>
               </div>
             </div>
+            <!-- Settle-up receipt: WhatsApp-ready who-owes-what message -->
+            <div v-if="currentOrder?.settle_message" class="mt-4 flex gap-2">
+              <BaseButton size="sm" variant="secondary" class="flex-1" @click="copySettleMessage">
+                📋 Copy settle-up
+              </BaseButton>
+              <BaseButton size="sm" variant="success" class="flex-1" @click="shareSettleOnWhatsApp">
+                Share on WhatsApp
+              </BaseButton>
+            </div>
             <div v-if="currentOrder?.instapay_link && currentOrder.collector === authStore.user?.id" class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/30 rounded">
               <p class="text-sm font-medium mb-2 dark:text-white">Instapay Link:</p>
               <div class="flex items-center space-x-2">
@@ -904,6 +947,54 @@
       @close="showCustomSplitModal = false"
       @locked="onCustomSplitLocked"
     />
+
+    <!-- Talabat order sheet: aggregated items for the collector to place the order -->
+    <BaseModal
+      :open="showTalabatSheet"
+      title="🛵 Talabat order sheet"
+      size="md"
+      @close="showTalabatSheet = false"
+    >
+      <div v-if="loadingTalabatSheet" class="text-center py-6 text-gray-500 dark:text-gray-400">
+        Loading order sheet…
+      </div>
+      <div v-else-if="talabatSheet" class="space-y-4">
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          {{ talabatSheet.restaurant }} — everything below is aggregated across participants.
+        </p>
+        <div class="space-y-2">
+          <div v-for="(item, idx) in talabatSheet.items" :key="idx" class="text-sm">
+            <p class="font-medium text-gray-900 dark:text-white">
+              {{ item.quantity }} × {{ item.name }}
+            </p>
+            <p
+              v-for="(note, nIdx) in item.notes"
+              :key="nIdx"
+              class="pl-5 text-xs text-gray-500 dark:text-gray-400 italic"
+            >
+              📝 {{ note }}
+            </p>
+          </div>
+        </div>
+        <div class="border-t border-gray-100 dark:border-gray-700 pt-3 flex justify-between text-sm font-semibold text-gray-900 dark:text-white">
+          <span>Items total</span>
+          <span>{{ formatPrice(talabatSheet.total_items_cost) }} EGP</span>
+        </div>
+        <p v-if="!talabatSheet.talabat_url" class="text-xs text-gray-500 dark:text-gray-400">
+          No Talabat link on this restaurant
+        </p>
+      </div>
+      <template #footer>
+        <div class="flex gap-2">
+          <BaseButton variant="secondary" class="flex-1" :disabled="!talabatSheet" @click="copyTalabatSheet">
+            Copy sheet
+          </BaseButton>
+          <BaseButton v-if="talabatSheet?.talabat_url" class="flex-1" @click="openTalabatUrl">
+            Open Talabat ↗
+          </BaseButton>
+        </div>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
@@ -919,6 +1010,7 @@ import api from '../api'
 import QRCode from 'qrcode'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseBadge from '../components/ui/BaseBadge.vue'
+import BaseModal from '../components/ui/BaseModal.vue'
 import OrderStepper from '../components/order/OrderStepper.vue'
 import OrderActionBar from '../components/order/OrderActionBar.vue'
 import OrderRoster from '../components/order/OrderRoster.vue'
@@ -991,8 +1083,23 @@ const proofUploadPaymentId = ref(null)
 const uploadingProofFor = ref(null)
 const reviewingProofFor = ref(null)
 
-// "Add my usual" state
+// "Add my usual" state — usualItems is prefetched on load so the hero banner
+// can offer a one-tap re-add before the user has anything in the order
 const addingUsual = ref(false)
+const usualItems = ref([])
+const usualBannerDismissed = ref(false)
+
+const showUsualBanner = computed(() =>
+  currentOrder.value?.status === 'OPEN' &&
+  !usualBannerDismissed.value &&
+  usualItems.value.length > 0 &&
+  !(currentOrder.value?.items || []).some(i => i.user === authStore.user?.id)
+)
+
+// Talabat order sheet (collector handoff) state
+const showTalabatSheet = ref(false)
+const talabatSheet = ref(null)
+const loadingTalabatSheet = ref(false)
 
 const availableMenuItems = computed(() => {
   return ordersStore.menuItems.filter(item => item.is_available)
@@ -1091,6 +1198,9 @@ function formatCutoffTime(dateString) {
 async function loadOrder() {
   loading.value = true
   error.value = null
+  // Reset the my-usual banner when (re)loading — it's per order
+  usualItems.value = []
+  usualBannerDismissed.value = false
   const code = route.params.code.toUpperCase()
   
   try {
@@ -1164,6 +1274,15 @@ async function loadOrder() {
       }
     }
     
+    // Prefetch "my usual" for the hero banner (open order, none of my items yet).
+    // Fire-and-forget: the banner appears when it resolves, page load isn't blocked.
+    if (ordersStore.currentOrder.status === 'OPEN' &&
+        !(ordersStore.currentOrder.items || []).some(i => i.user === authStore.user?.id)) {
+      ordersStore.fetchMyUsual(ordersStore.currentOrder.restaurant).then(usual => {
+        usualItems.value = usual.success ? (usual.data?.items || []) : []
+      })
+    }
+
     // Generate QR codes
     await nextTick()
     generateInstapayQR()
@@ -1403,7 +1522,8 @@ async function addMenuItem() {
   }
 }
 
-// One-tap re-add of the user's items from their last order at this restaurant
+// One-tap re-add of the user's items from their last order at this restaurant.
+// Shared by the hero banner and the small button next to the menu picker.
 async function addMyUsual() {
   const order = currentOrder.value || ordersStore.currentOrder
   if (!order) {
@@ -1417,21 +1537,25 @@ async function addMyUsual() {
 
   addingUsual.value = true
   try {
-    const result = await ordersStore.fetchMyUsual(order.restaurant)
-    if (!result.success) {
-      const errorMsg = result.error?.detail || result.error?.error || 'Unknown error'
-      toast.error('Failed to fetch your usual: ' + errorMsg)
-      return
+    // The banner prefetches on load; fall back to fetching on demand
+    let items = usualItems.value
+    if (!items.length) {
+      const result = await ordersStore.fetchMyUsual(order.restaurant)
+      if (!result.success) {
+        const errorMsg = result.error?.detail || result.error?.error || 'Unknown error'
+        toast.error('Failed to fetch your usual: ' + errorMsg)
+        return
+      }
+      items = result.data?.items || []
     }
 
-    const usualItems = result.data?.items || []
-    if (!usualItems.length) {
+    if (!items.length) {
       toast.info('No previous order here yet')
       return
     }
 
     let added = 0
-    for (const usual of usualItems) {
+    for (const usual of items) {
       const itemData = {
         order: order.id,
         menu_item: usual.menu_item,
@@ -1445,12 +1569,67 @@ async function addMyUsual() {
 
     if (added > 0) {
       toast.success(`Added ${added} item${added === 1 ? '' : 's'} from your last order`)
+      usualBannerDismissed.value = true
     } else {
       toast.error('Could not add items from your last order')
     }
   } finally {
     addingUsual.value = false
   }
+}
+
+// --- Talabat order sheet (collector handoff) ---
+async function openTalabatSheet() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order) {
+    toast.error('Order not loaded')
+    return
+  }
+  showTalabatSheet.value = true
+  loadingTalabatSheet.value = true
+  const result = await ordersStore.fetchTalabatSheet(order.id)
+  loadingTalabatSheet.value = false
+  if (result.success) {
+    talabatSheet.value = result.data
+  } else {
+    showTalabatSheet.value = false
+    const errorMsg = result.error?.detail || result.error?.error || 'Unknown error'
+    toast.error('Failed to load Talabat sheet: ' + errorMsg)
+  }
+}
+
+async function copyTalabatSheet() {
+  if (!talabatSheet.value?.sheet_text) return
+  try {
+    await navigator.clipboard.writeText(talabatSheet.value.sheet_text)
+    toast.success('Order sheet copied — paste it into Talabat!')
+  } catch (error) {
+    toast.error('Failed to copy order sheet')
+  }
+}
+
+function openTalabatUrl() {
+  if (talabatSheet.value?.talabat_url) {
+    window.open(talabatSheet.value.talabat_url, '_blank')
+  }
+}
+
+// --- Settle-up receipt (WhatsApp-ready who-owes-what message) ---
+async function copySettleMessage() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order?.settle_message) return
+  try {
+    await navigator.clipboard.writeText(order.settle_message)
+    toast.success('Settle-up receipt copied!')
+  } catch (error) {
+    toast.error('Failed to copy settle-up receipt')
+  }
+}
+
+function shareSettleOnWhatsApp() {
+  const order = currentOrder.value || ordersStore.currentOrder
+  if (!order?.settle_message) return
+  window.open(`https://wa.me/?text=${encodeURIComponent(order.settle_message)}`, '_blank')
 }
 
 async function addCustomItem() {

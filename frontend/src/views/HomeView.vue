@@ -145,6 +145,161 @@
         </form>
       </div>
 
+      <BaseCard title="⏰ Scheduled orders">
+        <div v-if="loadingSchedules" class="text-sm text-gray-500 dark:text-gray-400 py-2">Loading schedules…</div>
+        <div v-else-if="schedules.length === 0" class="text-sm text-gray-500 dark:text-gray-400 py-2">
+          No schedules yet — set one up and the order opens itself.
+        </div>
+        <div v-else class="space-y-3">
+          <div
+            v-for="schedule in schedules"
+            :key="schedule.id"
+            class="flex items-center justify-between gap-3 border border-gray-200 dark:border-gray-700 rounded-lg p-3"
+          >
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                {{ schedule.restaurant_name }} · {{ formatScheduleTime(schedule.open_at) }}
+              </p>
+              <div class="mt-1 flex flex-wrap gap-1">
+                <span
+                  v-for="day in scheduleWeekdays(schedule.weekdays)"
+                  :key="day.value"
+                  class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"
+                >{{ day.label }}</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="schedule.is_active"
+                :disabled="togglingSchedule === schedule.id"
+                @click="toggleSchedule(schedule)"
+                class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50"
+                :class="schedule.is_active ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'"
+                :title="schedule.is_active ? 'Active — click to pause' : 'Paused — click to activate'"
+              >
+                <span
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                  :class="schedule.is_active ? 'translate-x-4' : 'translate-x-1'"
+                />
+              </button>
+              <button
+                type="button"
+                @click="deleteSchedule(schedule)"
+                class="text-gray-400 hover:text-red-600 dark:hover:text-red-400 px-1"
+                title="Delete schedule"
+                aria-label="Delete schedule"
+              >✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- New schedule (collapsed by default) -->
+        <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+          <button
+            type="button"
+            @click="showScheduleForm = !showScheduleForm"
+            class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+          >
+            {{ showScheduleForm ? 'Hide new schedule ▲' : '+ New schedule ▼' }}
+          </button>
+          <form v-if="showScheduleForm" @submit.prevent="createSchedule" class="mt-3 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Restaurant</label>
+              <select
+                v-model="newSchedule.restaurant"
+                @change="onScheduleRestaurantChange"
+                required
+                class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+              >
+                <option value="" disabled>Select a restaurant</option>
+                <option v-for="r in ordersStore.restaurants" :key="r.id" :value="r.id">{{ r.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Menu (optional)</label>
+              <select
+                v-model="newSchedule.menu"
+                :disabled="!newSchedule.restaurant || scheduleMenus.length === 0"
+                class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
+              >
+                <option :value="null">{{ scheduleMenus.length === 0 ? 'No menus available' : 'No specific menu' }}</option>
+                <option v-for="menu in scheduleMenus" :key="menu.id" :value="menu.id">{{ menu.name }}</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Opens at</label>
+                <input
+                  v-model="newSchedule.open_at"
+                  type="time"
+                  required
+                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Cutoff after (min)</label>
+                <input
+                  v-model.number="newSchedule.cutoff_after_minutes"
+                  type="number"
+                  min="0"
+                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Days</label>
+              <div class="mt-1 flex flex-wrap gap-1.5">
+                <button
+                  v-for="day in weekdayOptions"
+                  :key="day.value"
+                  type="button"
+                  @click="toggleWeekday(day.value)"
+                  class="text-xs font-medium px-2 py-1 rounded-full border transition-colors"
+                  :class="newSchedule.weekdays.includes(day.value)
+                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                    : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-indigo-400'"
+                >
+                  {{ day.label }}
+                </button>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Delivery</label>
+                <input v-model.number="newSchedule.delivery_fee" type="number" min="0" step="0.01"
+                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Tip</label>
+                <input v-model.number="newSchedule.tip" type="number" min="0" step="0.01"
+                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Service</label>
+                <input v-model.number="newSchedule.service_fee" type="number" min="0" step="0.01"
+                  class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Fee Split</label>
+              <select
+                v-model="newSchedule.fee_split_rule"
+                class="mt-1 block w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+              >
+                <option value="equal">Equal</option>
+                <option value="proportional">Proportional</option>
+                <option value="collector_pays">Collector Pays</option>
+              </select>
+            </div>
+            <BaseButton type="submit" block :loading="creatingSchedule">
+              Schedule it
+            </BaseButton>
+          </form>
+        </div>
+      </BaseCard>
+
       <div class="bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-gray-200/80 dark:ring-gray-700/50 shadow-sm hover:shadow-md transition-shadow p-6">
         <h2 class="text-xl font-semibold mb-4 dark:text-white">Join Order</h2>
         <form @submit.prevent="joinOrder" class="space-y-4">
@@ -256,6 +411,8 @@ import { formatCountdown, useTick } from '../composables/useCountdown'
 import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
+import BaseButton from '../components/ui/BaseButton.vue'
+import BaseCard from '../components/ui/BaseCard.vue'
 
 const toast = useToast()
 const { confirm: $confirm } = useConfirm()
@@ -366,6 +523,125 @@ async function onRestaurantChange() {
 
 const reorderBanner = ref('')
 
+// --- Scheduled (recurring) orders ---
+// Weekday values follow the backend csv convention: 0=Mon … 6=Sun
+const weekdayOptions = [
+  { value: 0, label: 'Mon' },
+  { value: 1, label: 'Tue' },
+  { value: 2, label: 'Wed' },
+  { value: 3, label: 'Thu' },
+  { value: 4, label: 'Fri' },
+  { value: 5, label: 'Sat' },
+  { value: 6, label: 'Sun' },
+]
+
+// Default: Sun–Thu (the local work week), opening at 11:00 with a 45-min cutoff
+const defaultSchedule = () => ({
+  restaurant: '',
+  menu: null,
+  open_at: '11:00',
+  weekdays: [6, 0, 1, 2, 3],
+  cutoff_after_minutes: 45,
+  delivery_fee: 30,
+  tip: 30,
+  service_fee: 0,
+  fee_split_rule: 'equal',
+})
+
+const schedules = computed(() => ordersStore.recurringOrders)
+const loadingSchedules = ref(false)
+const showScheduleForm = ref(false)
+const creatingSchedule = ref(false)
+const togglingSchedule = ref(null)
+const scheduleMenus = ref([])
+const newSchedule = ref(defaultSchedule())
+
+function formatScheduleTime(openAt) {
+  return String(openAt || '').slice(0, 5) // "11:00:00" → "11:00"
+}
+
+function scheduleWeekdays(csv) {
+  const selected = new Set(String(csv ?? '').split(',').filter(v => v !== '').map(Number))
+  return weekdayOptions.filter(day => selected.has(day.value))
+}
+
+function toggleWeekday(value) {
+  const index = newSchedule.value.weekdays.indexOf(value)
+  if (index === -1) newSchedule.value.weekdays.push(value)
+  else newSchedule.value.weekdays.splice(index, 1)
+}
+
+async function fetchSchedules() {
+  loadingSchedules.value = true
+  await ordersStore.fetchRecurringOrders()
+  loadingSchedules.value = false
+}
+
+async function onScheduleRestaurantChange() {
+  newSchedule.value.menu = null
+  scheduleMenus.value = []
+  if (!newSchedule.value.restaurant) return
+  const result = await ordersStore.fetchMenus(parseInt(newSchedule.value.restaurant))
+  if (result.success) {
+    scheduleMenus.value = result.data.filter(menu => menu.is_active)
+  }
+}
+
+async function createSchedule() {
+  if (!newSchedule.value.restaurant) {
+    toast.warning('Please select a restaurant')
+    return
+  }
+  if (newSchedule.value.weekdays.length === 0) {
+    toast.warning('Pick at least one day')
+    return
+  }
+
+  creatingSchedule.value = true
+  const openAt = newSchedule.value.open_at
+  const result = await ordersStore.createRecurringOrder({
+    restaurant: parseInt(newSchedule.value.restaurant),
+    menu: newSchedule.value.menu ? parseInt(newSchedule.value.menu) : null,
+    open_at: openAt.length === 5 ? `${openAt}:00` : openAt,
+    weekdays: newSchedule.value.weekdays.join(','),
+    cutoff_after_minutes: newSchedule.value.cutoff_after_minutes || null,
+    delivery_fee: newSchedule.value.delivery_fee,
+    tip: newSchedule.value.tip,
+    service_fee: newSchedule.value.service_fee,
+    fee_split_rule: newSchedule.value.fee_split_rule,
+  })
+
+  if (result.success) {
+    toast.success('Scheduled — it will open automatically')
+    newSchedule.value = defaultSchedule()
+    scheduleMenus.value = []
+    showScheduleForm.value = false
+    await fetchSchedules()
+  } else {
+    toast.error('Failed to create schedule: ' + (result.error?.detail || JSON.stringify(result.error)))
+  }
+  creatingSchedule.value = false
+}
+
+async function toggleSchedule(schedule) {
+  togglingSchedule.value = schedule.id
+  const result = await ordersStore.updateRecurringOrder(schedule.id, { is_active: !schedule.is_active })
+  if (!result.success) {
+    toast.error('Failed to update schedule: ' + (result.error?.detail || JSON.stringify(result.error)))
+  }
+  togglingSchedule.value = null
+}
+
+async function deleteSchedule(schedule) {
+  if (!(await $confirm(`Delete the ${schedule.restaurant_name} schedule?`, 'Delete Schedule'))) return
+  const result = await ordersStore.deleteRecurringOrder(schedule.id)
+  if (result.success) {
+    toast.success('Schedule deleted')
+  } else {
+    toast.error('Failed to delete schedule: ' + (result.error?.detail || JSON.stringify(result.error)))
+  }
+}
+
 // Restaurant type-ahead search
 const restaurantSearch = ref('')
 const restaurantOpen = ref(false)
@@ -406,6 +682,7 @@ onMounted(async () => {
     ordersStore.fetchOrders(),
     ordersStore.fetchFeePresets(),
     fetchPendingPayments(),
+    fetchSchedules(),
   ])
   loadingOrders.value = false
 

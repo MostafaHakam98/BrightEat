@@ -6,7 +6,7 @@ from .views import (
     MenuItemViewSet, CollectionOrderViewSet, OrderItemViewSet,
     PaymentViewSet, AuditLogViewSet, FeePresetViewSet, RecommendationViewSet,
     MicrosoftSSOStatusView, MicrosoftLoginView, MicrosoftCallbackView, HiveSSOView,
-    TaskStatusView, NotificationViewSet,
+    TaskStatusView, NotificationViewSet, QuickJoinView, RecurringOrderViewSet,
     PushPublicKeyView, PushSubscribeView, PushUnsubscribeView,
 )
 
@@ -22,11 +22,13 @@ router.register(r'audit-logs', AuditLogViewSet, basename='auditlog')
 router.register(r'fee-presets', FeePresetViewSet, basename='feepreset')
 router.register(r'recommendations', RecommendationViewSet, basename='recommendation')
 router.register(r'notifications', NotificationViewSet, basename='notification')
+router.register(r'recurring-orders', RecurringOrderViewSet, basename='recurringorder')
 
 urlpatterns = [
     path('', include(router.urls)),
     path('auth/register/', RegisterView.as_view(), name='register'),
     path('auth/login/', LoginView.as_view(), name='token_obtain_pair'),
+    path('auth/quick-join/', QuickJoinView.as_view(), name='quick-join'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/microsoft/status/', MicrosoftSSOStatusView.as_view(), name='ms-sso-status'),
     path('auth/microsoft/login/', MicrosoftLoginView.as_view(), name='ms-login'),

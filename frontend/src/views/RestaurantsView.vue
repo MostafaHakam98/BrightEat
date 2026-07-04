@@ -267,7 +267,7 @@ async function saveTalabatRestaurant() {
       toast.success(`Menu populated: ${poll.result?.items_count ?? 0} items synced.`)
       await ordersStore.fetchRestaurants()
     } else {
-      toast.error('Menu sync failed: ' + (poll.error || 'Check server logs.'))
+      toast.error('Menu sync failed: ' + (poll.error || 'Check server logs.') + " You can still add items manually from the restaurant's menu page.")
     }
     talabatStatus.value = ''
   }
@@ -306,7 +306,7 @@ async function syncMenu(restaurantId) {
     toast.success(`Menu synced! ${poll.result?.items_count ?? 0} items found.`)
     await ordersStore.fetchRestaurants()
   } else {
-    toast.error('Menu sync failed: ' + (poll.error || 'Unknown error'))
+    toast.error('Menu sync failed: ' + (poll.error || 'Unknown error') + " You can still add items manually from the restaurant's menu page.")
   }
 
   syncingMenu.value = null

@@ -302,6 +302,40 @@ class Recommendation(models.Model):
         return f"{self.user.username} - {self.title} ({self.get_category_display()}) - {self.created_at.strftime('%Y-%m-%d')}"
 
 
+class RecurringOrder(models.Model):
+    """A schedule that auto-opens a collection order (e.g. lunch every
+    workday at 11:00) so nobody has to remember to start it."""
+    FEE_SPLIT_CHOICES = [
+        ('equal', 'Equal'),
+        ('proportional', 'Proportional'),
+        ('collector_pays', 'Collector Pays'),
+    ]
+
+    collector = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recurring_orders')
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='recurring_orders')
+    menu = models.ForeignKey(Menu, on_delete=models.SET_NULL, null=True, blank=True)
+    open_at = models.TimeField(help_text="Local time (Africa/Cairo) to open the order")
+    # Python weekday numbers, comma-separated: 0=Mon … 6=Sun. Egypt workweek default.
+    weekdays = models.CharField(max_length=20, default='6,0,1,2,3', help_text="Comma-separated weekday numbers, 0=Mon … 6=Sun")
+    cutoff_after_minutes = models.PositiveIntegerField(null=True, blank=True, help_text="Auto-set cutoff this many minutes after opening")
+    delivery_fee = models.DecimalField(max_digits=10, decimal_places=2, default=30)
+    tip = models.DecimalField(max_digits=10, decimal_places=2, default=30)
+    service_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    fee_split_rule = models.CharField(max_length=20, choices=FEE_SPLIT_CHOICES, default='equal')
+    is_active = models.BooleanField(default=True)
+    last_run_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['open_at']
+
+    def __str__(self):
+        return f"{self.restaurant.name} @ {self.open_at} ({self.weekdays})"
+
+    def weekday_list(self):
+        return [int(d) for d in self.weekdays.split(',') if d.strip().isdigit()]
+
+
 class PushSubscription(models.Model):
     """A browser's Web Push subscription for a user (one row per device/browser)."""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='push_subscriptions')

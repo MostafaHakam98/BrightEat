@@ -5,7 +5,8 @@ from django.conf import settings
 from django.utils import timezone as tz
 from .models import (
     User, Restaurant, Menu, MenuItem, CollectionOrder,
-    OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification
+    OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification,
+    RecurringOrder,
 )
 from .utils import format_item_name
 
@@ -325,6 +326,7 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
     total_items_cost = serializers.SerializerMethodField()
     total_cost = serializers.SerializerMethodField()
     share_message = serializers.SerializerMethodField()
+    settle_message = serializers.SerializerMethodField()
     join_url = serializers.SerializerMethodField()
     restaurant = serializers.PrimaryKeyRelatedField(queryset=Restaurant.objects.all(), required=True)
     menu = serializers.PrimaryKeyRelatedField(queryset=Menu.objects.all(), required=False, allow_null=True)
@@ -346,7 +348,7 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
                   'status', 'cutoff_time', 'instapay_link', 'is_private', 'assigned_users', 'assigned_users_details',
                   'delivery_fee', 'tip', 'service_fee', 'fee_split_rule', 'created_at', 'locked_at', 'ordered_at', 'closed_at',
                   'items', 'participants', 'joined_users_details', 'payments', 'total_items_cost', 'total_cost',
-                  'share_message', 'join_url']
+                  'share_message', 'settle_message', 'join_url']
         read_only_fields = ['id', 'code', 'collector', 'created_at', 'locked_at', 'ordered_at', 'closed_at', 'assigned_users_details']
     
     def get_assigned_users_details(self, obj):
@@ -434,8 +436,56 @@ class CollectionOrderSerializer(serializers.ModelSerializer):
         if obj.assigned_users.exists():
             assigned_names = ', '.join([u.username for u in obj.assigned_users.all()])
             message += f"\n👥 Assigned to: {assigned_names}"
-        
+
         return message
+
+    def get_settle_message(self, obj):
+        """WhatsApp-ready settle-up receipt: who owes what, who already paid,
+        and where to send the money. The collector pastes this into the group
+        instead of chasing people one by one."""
+        payments = list(obj.payments.all())
+        if not payments:
+            return None
+
+        lines = [f'🧾 {obj.restaurant.name} — order {obj.code}', '']
+        total = 0
+        for p in sorted(payments, key=lambda x: (x.is_paid, x.user.username.lower())):
+            display = p.user.first_name or p.user.username
+            mark = '✅' if p.is_paid else '⏳'
+            suffix = ' (paid)' if p.is_paid else ''
+            lines.append(f'{mark} {display} — {p.amount} EGP{suffix}')
+            total += p.amount
+        lines.append('')
+        lines.append(f'💰 Total: {total} EGP')
+        collector_name = obj.collector.first_name or obj.collector.username
+        if obj.collector.instapay_link:
+            lines.append(f'💳 Pay {collector_name}: {obj.collector.instapay_link}')
+        else:
+            lines.append(f'💳 Pay {collector_name} via Instapay')
+        return '\n'.join(lines)
+
+
+class RecurringOrderSerializer(serializers.ModelSerializer):
+    restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
+    menu_name = serializers.CharField(source='menu.name', read_only=True, default=None)
+    collector_name = serializers.CharField(source='collector.username', read_only=True)
+
+    class Meta:
+        model = RecurringOrder
+        fields = ['id', 'restaurant', 'restaurant_name', 'menu', 'menu_name',
+                  'collector', 'collector_name', 'open_at', 'weekdays',
+                  'cutoff_after_minutes', 'delivery_fee', 'tip', 'service_fee',
+                  'fee_split_rule', 'is_active', 'last_run_date', 'created_at']
+        read_only_fields = ['id', 'collector', 'last_run_date', 'created_at']
+
+    def validate_weekdays(self, value):
+        try:
+            days = [int(d) for d in value.split(',') if d.strip() != '']
+        except ValueError:
+            raise serializers.ValidationError('weekdays must be comma-separated numbers 0-6')
+        if not days or any(d < 0 or d > 6 for d in days):
+            raise serializers.ValidationError('weekdays must contain numbers 0 (Mon) … 6 (Sun)')
+        return ','.join(str(d) for d in sorted(set(days)))
 
 
 class PaymentSerializer(serializers.ModelSerializer):

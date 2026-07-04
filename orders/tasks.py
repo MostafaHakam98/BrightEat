@@ -75,6 +75,70 @@ def enforce_order_cutoffs():
     return {'reminded': reminded, 'auto_locked': locked}
 
 
+@shared_task(name='open_recurring_orders')
+def open_recurring_orders():
+    """Runs every minute via beat. Opens scheduled daily orders (e.g. lunch at
+    11:00 on workdays) and tells everyone — nobody has to remember to start it."""
+    from django.contrib.auth import get_user_model
+    from .models import CollectionOrder, RecurringOrder
+    from .services import notify_users
+    from .websocket_utils import broadcast_new_order
+
+    now_local = timezone.localtime()
+    today = now_local.date()
+    opened = 0
+
+    due = RecurringOrder.objects.filter(
+        is_active=True,
+        open_at__lte=now_local.time(),
+    ).exclude(last_run_date=today).select_related('restaurant', 'menu', 'collector')
+
+    for schedule in due:
+        if now_local.weekday() not in schedule.weekday_list():
+            continue
+        # Mark as run first so a crash mid-loop can't double-open tomorrow's slot
+        schedule.last_run_date = today
+        schedule.save(update_fields=['last_run_date'])
+
+        # Don't duplicate if the collector already opened this restaurant today
+        already = CollectionOrder.objects.filter(
+            collector=schedule.collector,
+            restaurant=schedule.restaurant,
+            status='OPEN',
+            created_at__date=today,
+        ).exists()
+        if already:
+            continue
+
+        cutoff = None
+        if schedule.cutoff_after_minutes:
+            cutoff = now_local + timedelta(minutes=schedule.cutoff_after_minutes)
+
+        order = CollectionOrder.objects.create(
+            restaurant=schedule.restaurant,
+            menu=schedule.menu,
+            collector=schedule.collector,
+            cutoff_time=cutoff,
+            delivery_fee=schedule.delivery_fee,
+            tip=schedule.tip,
+            service_fee=schedule.service_fee,
+            fee_split_rule=schedule.fee_split_rule,
+        )
+        opened += 1
+
+        User = get_user_model()
+        notify_users(
+            User.objects.filter(is_active=True),
+            f'🍽 Daily order from {schedule.restaurant.name} is open — join with code {order.code}!',
+            order=order,
+        )
+        broadcast_new_order(order)
+
+    if opened:
+        logger.info('Recurring orders opened: %d', opened)
+    return {'opened': opened}
+
+
 @shared_task(name='send_web_push')
 def send_web_push(user_ids, title, body, url='/'):
     """Best-effort Web Push to every subscription of the given users.
