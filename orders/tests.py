@@ -856,3 +856,67 @@ class SettleMessageTest(TestCase):
         self.assertIn('EGP', msg)
         self.assertIn('ipn.eg', msg)
         self.assertIn('⏳', msg)
+
+
+@override_settings(AUTO_CLOSE_AFTER_HOURS=12)
+class AutoCloseStaleOrdersTest(TestCase):
+    """Collectors forget to close orders; a sweep closes stale ones while
+    keeping unpaid balances tracked."""
+
+    def setUp(self):
+        cache.clear()
+        self.collector = make_user('collector')
+        self.alice = make_user('alice')
+        self.restaurant = Restaurant.objects.create(name='R', created_by=self.collector)
+        self.menu = Menu.objects.create(restaurant=self.restaurant, name='M')
+        self.item = MenuItem.objects.create(menu=self.menu, name='X', price=Decimal('50.00'))
+
+    def _order(self, status, age_hours):
+        order = CollectionOrder.objects.create(
+            restaurant=self.restaurant, collector=self.collector, status=status)
+        CollectionOrder.objects.filter(id=order.id).update(
+            created_at=timezone.now() - timedelta(hours=age_hours))
+        return order
+
+    def test_stale_locked_and_ordered_get_closed(self):
+        from orders.tasks import auto_close_stale_orders
+        old_locked = self._order('LOCKED', 20)
+        old_ordered = self._order('ORDERED', 20)
+        old_open = self._order('OPEN', 20)
+        result = auto_close_stale_orders()
+        self.assertEqual(result['closed'], 3)
+        for o in (old_locked, old_ordered, old_open):
+            o.refresh_from_db()
+            self.assertEqual(o.status, 'CLOSED')
+            self.assertIsNotNone(o.closed_at)
+        # collector was told
+        self.assertTrue(Notification.objects.filter(
+            user=self.collector, message__icontains='auto-closed').exists())
+
+    def test_fresh_orders_are_left_alone(self):
+        from orders.tasks import auto_close_stale_orders
+        fresh = self._order('LOCKED', 2)  # 2h old, under the 12h threshold
+        self.assertEqual(auto_close_stale_orders()['closed'], 0)
+        fresh.refresh_from_db()
+        self.assertEqual(fresh.status, 'LOCKED')
+
+    def test_already_closed_untouched(self):
+        from orders.tasks import auto_close_stale_orders
+        self._order('CLOSED', 40)
+        self.assertEqual(auto_close_stale_orders()['closed'], 0)
+
+    def test_unpaid_balance_still_tracked_after_autoclose(self):
+        """The whole point: closing must not erase who owes money."""
+        from orders.tasks import auto_close_stale_orders
+        order = self._order('LOCKED', 20)
+        payment = Payment.objects.create(order=order, user=self.alice, amount=Decimal('80.00'))
+        auto_close_stale_orders()
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'CLOSED')
+        # pending_payments spans LOCKED/ORDERED/CLOSED — debt survives the close
+        client = APIClient()
+        token = get_token(client, 'alice')
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        res = client.get('/api/orders/pending_payments/')
+        owed = [p for p in res.data if p['payment_id'] == payment.id]
+        self.assertEqual(len(owed), 1)

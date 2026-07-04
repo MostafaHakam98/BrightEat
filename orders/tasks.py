@@ -75,6 +75,51 @@ def enforce_order_cutoffs():
     return {'reminded': reminded, 'auto_locked': locked}
 
 
+@shared_task(name='auto_close_stale_orders')
+def auto_close_stale_orders():
+    """Runs periodically. Collectors routinely forget to hit Close once the
+    food has arrived, so orders pile up in the active view forever. This
+    closes orders that have sat unfinished well past their day.
+
+    Unpaid balances are NOT lost — CLOSED orders still surface in Pending
+    Payments, so debts stay tracked; only the clutter goes away.
+    """
+    from django.conf import settings
+    from .models import AuditLog, CollectionOrder
+    from .services import notify_users
+    from .websocket_utils import broadcast_order_update
+
+    hours = getattr(settings, 'AUTO_CLOSE_AFTER_HOURS', 12)
+    stale_before = timezone.now() - timedelta(hours=hours)
+    stale = CollectionOrder.objects.filter(
+        status__in=['OPEN', 'LOCKED', 'ORDERED'],
+        created_at__lt=stale_before,
+    ).select_related('restaurant', 'collector')
+
+    closed = 0
+    for order in stale:
+        order.status = 'CLOSED'
+        order.closed_at = timezone.now()
+        order.save(update_fields=['status', 'closed_at'])
+        AuditLog.objects.create(
+            order=order, user=None, action='closed',
+            details={'reason': 'auto_close_stale', 'age_hours': hours},
+        )
+        notify_users(
+            [order.collector],
+            f'Order {order.code} at {order.restaurant.name} was auto-closed '
+            f'(it had been open over {hours}h). Any unpaid balances are still '
+            f'tracked in Pending Payments.',
+            order=order,
+        )
+        broadcast_order_update(order)
+        closed += 1
+
+    if closed:
+        logger.info('Auto-closed %d stale orders', closed)
+    return {'closed': closed}
+
+
 @shared_task(name='open_recurring_orders')
 def open_recurring_orders():
     """Runs every minute via beat. Opens scheduled daily orders (e.g. lunch at

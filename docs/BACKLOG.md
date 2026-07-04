@@ -60,6 +60,10 @@ Tiers are ordered by user impact per unit of effort:
   `assigned_users` and the collector.
 - [x] **Make `cutoff_time` real.** Celery beat job auto-locks OPEN orders past their cutoff and sends a
   "locks in ≤15 min" reminder beforehand; both broadcast over WS.
+- [x] **Auto-close stale orders.** Collectors forget to hit Close once food arrives, so orders piled up in
+  the active view. A beat sweep (every 30 min) closes OPEN/LOCKED/ORDERED orders older than
+  `AUTO_CLOSE_AFTER_HOURS` (default 12), notifies the collector, and broadcasts. Unpaid balances stay
+  tracked (CLOSED orders still surface in Pending Payments) — only the clutter is removed.
 - [x] **Daily payment reminders.** Celery beat job nags unpaid debtors on LOCKED/ORDERED/CLOSED orders
   (`payment_due` notification, one per unpaid payment per day).
 - [x] **Live notifications over WebSocket.** Per-user notification group in the consumer; notifications are pushed

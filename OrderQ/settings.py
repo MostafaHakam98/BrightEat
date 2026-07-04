@@ -275,7 +275,16 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'open_recurring_orders',
         'schedule': 60.0,  # every minute
     },
+    'auto-close-stale-orders': {
+        'task': 'auto_close_stale_orders',
+        'schedule': crontab(minute='*/30'),  # sweep twice an hour
+    },
 }
+
+# Close orders left unfinished (OPEN/LOCKED/ORDERED) this many hours after
+# creation — collectors forget to hit Close once the food arrives. Unpaid
+# balances remain tracked on the closed order.
+AUTO_CLOSE_AFTER_HOURS = int(os.environ.get('AUTO_CLOSE_AFTER_HOURS', 12))
 
 # Retention windows (days) for unbounded tables
 NOTIFICATION_RETENTION_DAYS = int(os.environ.get('NOTIFICATION_RETENTION_DAYS', 90))
