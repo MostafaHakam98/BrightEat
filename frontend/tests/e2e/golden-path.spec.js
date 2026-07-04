@@ -10,7 +10,11 @@ test('golden path: login, create order, add item, lock', async ({ page }) => {
   await page.getByPlaceholder('Username or Email').fill('e2e_collector')
   await page.getByPlaceholder('Password').fill('testpass123')
   await page.getByRole('button', { name: /sign in/i }).click()
-  await expect(page.getByRole('heading', { name: /create new order/i })).toBeVisible({ timeout: 15_000 })
+  // Home is tabbed now — the create form lives behind the "New order" tab
+  const newOrderTab = page.getByRole('button', { name: /new order/i }).first()
+  await expect(newOrderTab).toBeVisible({ timeout: 15_000 })
+  await newOrderTab.click()
+  await expect(page.getByRole('heading', { name: /create new order/i })).toBeVisible()
 
   // ── Create order ──
   await page.getByPlaceholder('Search restaurant…').fill('E2E Diner')

@@ -39,12 +39,26 @@
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="flex items-center justify-center py-16 text-gray-500 dark:text-gray-400">
-      <svg class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-      </svg>
-      Loading…
+    <div v-if="loading" aria-busy="true">
+      <span class="sr-only">Loading report…</span>
+      <div class="mb-6 flex items-baseline gap-3">
+        <BaseSkeleton width="11rem" height="1.375rem" />
+        <BaseSkeleton width="6rem" height="0.875rem" />
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+        <div
+          v-for="i in 6"
+          :key="i"
+          class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 space-y-2.5"
+        >
+          <BaseSkeleton width="55%" height="0.75rem" />
+          <BaseSkeleton width="40%" height="1.75rem" />
+        </div>
+      </div>
+      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 space-y-3">
+        <BaseSkeleton width="10rem" height="1rem" />
+        <BaseSkeleton v-for="i in 4" :key="i" height="0.875rem" :width="`${90 - i * 12}%`" />
+      </div>
     </div>
 
     <!-- Report -->
@@ -114,6 +128,7 @@ import { ref, computed, onMounted, defineComponent, h } from 'vue'
 import { useOrdersStore } from '../stores/orders'
 import { useAuthStore } from '../stores/auth'
 import api from '../api'
+import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 
 const ordersStore = useOrdersStore()
 const authStore = useAuthStore()

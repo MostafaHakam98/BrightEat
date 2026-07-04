@@ -19,7 +19,10 @@
       </div>
     </div>
 
-    <div v-if="loading" class="text-center py-8 text-gray-600 dark:text-gray-400">Loading...</div>
+    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-busy="true">
+      <span class="sr-only">Loading orders…</span>
+      <SkeletonOrderCard v-for="i in 6" :key="i" />
+    </div>
     <div v-else-if="ordersStore.orders.length === 0" class="text-center py-8 text-gray-500 dark:text-gray-400">
       No orders found
     </div>
@@ -107,6 +110,7 @@ import { formatCountdown, useTick } from '../composables/useCountdown'
 import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
 import api from '../api'
+import SkeletonOrderCard from '../components/ui/SkeletonOrderCard.vue'
 
 const toast = useToast()
 const { confirm: $confirm } = useConfirm()

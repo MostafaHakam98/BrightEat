@@ -5,8 +5,31 @@
       <p class="text-gray-600 dark:text-gray-400 mt-2">Manage payments you owe and payments owed to you</p>
     </div>
 
-    <div v-if="loading" class="text-center py-8">
-      <p class="text-lg text-gray-600 dark:text-gray-400">Loading pending payments...</p>
+    <div v-if="loading" aria-busy="true">
+      <span class="sr-only">Loading pending payments…</span>
+      <div v-for="section in 2" :key="section" :class="section === 1 ? 'mb-8' : ''">
+        <BaseSkeleton width="14rem" height="1.5rem" class="mb-4" />
+        <div class="space-y-4">
+          <div
+            v-for="i in (section === 1 ? 3 : 2)"
+            :key="i"
+            class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border-l-4 border-gray-200 dark:border-gray-700"
+          >
+            <div class="flex justify-between items-start gap-4">
+              <div class="flex-1 space-y-2.5">
+                <BaseSkeleton width="45%" height="1.125rem" />
+                <BaseSkeleton width="32%" height="0.8125rem" />
+                <BaseSkeleton width="38%" height="0.8125rem" />
+                <BaseSkeleton width="6rem" height="1.5rem" />
+              </div>
+              <div class="w-28 space-y-2 shrink-0">
+                <BaseSkeleton height="2.25rem" />
+                <BaseSkeleton height="2.25rem" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div v-else>
       <!-- Payments I Owe Section -->
@@ -235,6 +258,7 @@ import { useOrdersStore } from '../stores/orders'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseBadge from '../components/ui/BaseBadge.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
+import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 
 const toast = useToast()
 const { confirm: $confirm } = useConfirm()
