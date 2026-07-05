@@ -675,9 +675,15 @@
               </a>
             </div>
             <!-- Join QR code -->
-            <div v-if="currentOrder?.join_url" class="mt-4 flex flex-col items-center gap-2">
+            <div v-if="currentOrder?.join_url && joinQrDataUrl" class="mt-4 flex flex-col items-center gap-2">
               <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Scan to join</p>
-              <canvas ref="joinQrCanvas" class="rounded border border-gray-200 dark:border-gray-600"></canvas>
+              <img
+                :src="joinQrDataUrl"
+                width="160"
+                height="160"
+                alt="Scan to join"
+                class="rounded border border-gray-200 dark:border-gray-600 bg-white"
+              />
             </div>
           </div>
 
@@ -1086,7 +1092,7 @@ const customItemPrice = ref(0)
 const customItemNote = ref('')
 const selectedItemUser = ref(null) // User to assign the item to (null = current user)
 const instapayQrCanvas = ref(null)
-const joinQrCanvas = ref(null)
+const joinQrDataUrl = ref('')
 const transferCollectorId = ref('')
 const showAssignUsers = ref(false)
 const selectedUsers = ref([])
@@ -1435,11 +1441,19 @@ function launchConfetti() {
 }
 
 async function generateJoinQR() {
+  // Render to a data URL bound to an <img> rather than drawing to a canvas
+  // ref — the canvas isn't reliably mounted when this runs (it sits behind a
+  // v-if), which is why the QR sometimes never appeared.
   const order = currentOrder.value || ordersStore.currentOrder
-  if (order?.join_url && joinQrCanvas.value) {
+  if (order?.join_url) {
     try {
-      await QRCode.toCanvas(joinQrCanvas.value, order.join_url, { width: 160, margin: 1 })
-    } catch (e) { console.error('Join QR failed', e) }
+      joinQrDataUrl.value = await QRCode.toDataURL(order.join_url, { width: 160, margin: 1 })
+    } catch (e) {
+      console.error('Join QR failed', e)
+      joinQrDataUrl.value = ''
+    }
+  } else {
+    joinQrDataUrl.value = ''
   }
 }
 
@@ -1494,14 +1508,11 @@ watch(() => currentOrder.value?.collector_instapay_link, () => {
   })
 })
 
-// Watch for join_url to regenerate join QR code whenever order updates
-watch(() => currentOrder.value?.join_url, (newUrl) => {
-  if (newUrl) {
-    nextTick(() => {
-      generateJoinQR()
-    })
-  }
-})
+// Regenerate the join QR whenever the order's join_url appears/changes.
+// immediate:true covers the first load; no DOM/canvas dependency anymore.
+watch(() => currentOrder.value?.join_url, () => {
+  generateJoinQR()
+}, { immediate: true })
 
 // Disconnect WebSocket when component unmounts
 onUnmounted(() => {
