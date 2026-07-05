@@ -18,6 +18,7 @@ import 'screens/create_order_screen.dart';
 import 'screens/restaurants_screen.dart';
 import 'screens/menu_management_screen.dart';
 import 'screens/reports_screen.dart';
+import 'screens/scheduled_orders_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/pending_payments_screen.dart';
 import 'screens/recommendations_screen.dart';
@@ -285,6 +286,16 @@ class _MyAppState extends State<MyApp> {
           pageBuilder: (context, state) => CustomTransitionPage(
             key: state.pageKey,
             child: const ReportsScreen(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) => child,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+        ),
+        GoRoute(
+          path: '/scheduled',
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            child: const ScheduledOrdersScreen(),
             transitionsBuilder: (context, animation, secondaryAnimation, child) => child,
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,

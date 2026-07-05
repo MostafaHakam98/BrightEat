@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart';
 import '../models/order.dart';
+import '../models/recurring_order.dart';
 import '../models/restaurant.dart';
 import '../models/menu.dart';
 import '../models/menu_item.dart';
@@ -212,12 +214,27 @@ class OrdersService {
     }
   }
 
-  Future<bool> lockOrder(int orderId) async {
+  Future<bool> lockOrder(int orderId, {Map<String, dynamic>? customAmounts}) async {
     try {
-      await apiService.lockOrder(orderId);
+      await apiService.lockOrder(orderId, customAmounts: customAmounts);
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Lock with a result so the UI can surface backend validation (e.g. a
+  /// custom split that doesn't add up). {success, error}.
+  Future<Map<String, dynamic>> lockOrderResult(int orderId, {Map<String, dynamic>? customAmounts}) async {
+    try {
+      await apiService.lockOrder(orderId, customAmounts: customAmounts);
+      return {'success': true};
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final msg = data is Map ? (data['error'] ?? data['detail']) : null;
+      return {'success': false, 'error': msg ?? 'Failed to lock order'};
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -506,6 +523,131 @@ class OrdersService {
       print('❌ Stack trace: $stackTrace');
       return [];
     }
+  }
+
+  // ── Collector actions ──────────────────────────────────────────
+  Future<Map<String, dynamic>> transferCollector(int orderId, int newCollectorId) async {
+    try {
+      await apiService.transferCollector(orderId, newCollectorId);
+      return {'success': true};
+    } on DioException catch (e) {
+      final d = e.response?.data;
+      return {'success': false, 'error': d is Map ? (d['error'] ?? d['detail']) : 'Failed'};
+    }
+  }
+
+  Future<Map<String, dynamic>?> getTalabatSheet(int orderId) async {
+    try {
+      final res = await apiService.getTalabatSheet(orderId);
+      return Map<String, dynamic>.from(res.data);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getMyUsual(int restaurantId) async {
+    try {
+      final res = await apiService.getMyUsual(restaurantId);
+      return Map<String, dynamic>.from(res.data);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ── Payment proof ──────────────────────────────────────────────
+  Future<Map<String, dynamic>> uploadPaymentProof(int paymentId, String filePath) async {
+    try {
+      await apiService.uploadPaymentProof(paymentId, filePath);
+      return {'success': true};
+    } on DioException catch (e) {
+      final d = e.response?.data;
+      return {'success': false, 'error': d is Map ? (d['error'] ?? d['detail']) : 'Upload failed'};
+    }
+  }
+
+  Future<bool> confirmPaymentProof(int paymentId) async {
+    try { await apiService.confirmPaymentProof(paymentId); return true; } catch (_) { return false; }
+  }
+
+  Future<bool> rejectPaymentProof(int paymentId) async {
+    try { await apiService.rejectPaymentProof(paymentId); return true; } catch (_) { return false; }
+  }
+
+  // ── Talabat scraping ───────────────────────────────────────────
+  Future<Map<String, dynamic>> addRestaurantFromTalabat(String url, {bool syncNow = false}) async {
+    try {
+      final res = await apiService.addRestaurantFromTalabat(url, syncNow: syncNow);
+      return {'success': true, 'data': res.data, 'taskId': res.data is Map ? res.data['task_id'] : null};
+    } on DioException catch (e) {
+      final d = e.response?.data;
+      return {'success': false, 'error': d is Map ? (d['error'] ?? d['detail']) : 'Failed to add restaurant'};
+    }
+  }
+
+  Future<Map<String, dynamic>> syncRestaurantMenu(int restaurantId) async {
+    try {
+      final res = await apiService.syncRestaurantMenu(restaurantId);
+      return {'success': true, 'taskId': res.data is Map ? res.data['task_id'] : null};
+    } on DioException catch (e) {
+      final d = e.response?.data;
+      return {'success': false, 'error': d is Map ? (d['error'] ?? d['detail']) : 'Sync failed'};
+    }
+  }
+
+  /// Poll a Celery task until it finishes. onProgress(state, message).
+  Future<Map<String, dynamic>> pollTaskStatus(
+    String taskId, {
+    void Function(String state, String? message)? onProgress,
+    Duration interval = const Duration(seconds: 2),
+    int maxAttempts = 90,
+  }) async {
+    for (var i = 0; i < maxAttempts; i++) {
+      await Future.delayed(interval);
+      try {
+        final res = await apiService.getTaskStatus(taskId);
+        final data = res.data as Map;
+        final state = data['state']?.toString() ?? 'PENDING';
+        onProgress?.call(state, data['message']?.toString());
+        if (state == 'SUCCESS') return {'success': true, 'result': data['result']};
+        if (state == 'FAILURE') return {'success': false, 'error': data['error']?.toString() ?? 'Task failed'};
+      } catch (e) {
+        return {'success': false, 'error': e.toString()};
+      }
+    }
+    return {'success': false, 'error': 'Timed out after 3 minutes'};
+  }
+
+  // ── Recurring / scheduled orders ───────────────────────────────
+  Future<List<RecurringOrder>> fetchRecurringOrders() async {
+    try {
+      final res = await apiService.getRecurringOrders();
+      final data = res.data;
+      final list = (data is Map && data.containsKey('results')) ? data['results'] : data;
+      if (list is List) {
+        return list.map((j) => RecurringOrder.fromJson(Map<String, dynamic>.from(j))).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> createRecurringOrder(Map<String, dynamic> data) async {
+    try {
+      await apiService.createRecurringOrder(data);
+      return {'success': true};
+    } on DioException catch (e) {
+      final d = e.response?.data;
+      return {'success': false, 'error': d is Map ? (d.values.first) : 'Failed to create schedule'};
+    }
+  }
+
+  Future<bool> updateRecurringOrder(int id, Map<String, dynamic> data) async {
+    try { await apiService.updateRecurringOrder(id, data); return true; } catch (_) { return false; }
+  }
+
+  Future<bool> deleteRecurringOrder(int id) async {
+    try { await apiService.deleteRecurringOrder(id); return true; } catch (_) { return false; }
   }
 }
 

@@ -201,8 +201,18 @@ class ApiService {
     return _dio.patch('/orders/$orderId/', data: data);
   }
 
-  Future<Response> lockOrder(int orderId) async {
-    return _dio.post('/orders/$orderId/lock/');
+  Future<Response> lockOrder(int orderId, {Map<String, dynamic>? customAmounts}) async {
+    final data = customAmounts != null ? {'custom_amounts': customAmounts} : null;
+    return _dio.post('/orders/$orderId/lock/', data: data);
+  }
+
+  Future<Response> transferCollector(int orderId, int newCollectorId) async {
+    return _dio.post('/orders/$orderId/transfer_collector/',
+        data: {'new_collector_id': newCollectorId});
+  }
+
+  Future<Response> getTalabatSheet(int orderId) async {
+    return _dio.get('/orders/$orderId/talabat_sheet/');
   }
 
   Future<Response> unlockOrder(int orderId) async {
@@ -350,6 +360,58 @@ class ApiService {
 
   Future<Response> deleteRecommendation(int recommendationId) async {
     return _dio.delete('/recommendations/$recommendationId/');
+  }
+
+  // Talabat scraping (manager/all users) — async: returns a task id to poll
+  Future<Response> addRestaurantFromTalabat(String talabatUrl, {bool syncNow = false}) async {
+    return _dio.post('/restaurants/add_from_talabat/',
+        data: {'talabat_url': talabatUrl, 'sync_now': syncNow});
+  }
+
+  Future<Response> syncRestaurantMenu(int restaurantId) async {
+    return _dio.post('/restaurants/$restaurantId/sync_menu/');
+  }
+
+  Future<Response> getTaskStatus(String taskId) async {
+    return _dio.get('/task-status/$taskId/');
+  }
+
+  // One-tap reorder: the user's items from their last order at a restaurant
+  Future<Response> getMyUsual(int restaurantId) async {
+    return _dio.get('/restaurants/$restaurantId/my_usual/');
+  }
+
+  // Payment proof (Instapay screenshot) flow
+  Future<Response> uploadPaymentProof(int paymentId, String filePath) async {
+    final form = FormData.fromMap({
+      'proof': await MultipartFile.fromFile(filePath),
+    });
+    return _dio.post('/payments/$paymentId/upload_proof/', data: form);
+  }
+
+  Future<Response> confirmPaymentProof(int paymentId) async {
+    return _dio.post('/payments/$paymentId/confirm_proof/');
+  }
+
+  Future<Response> rejectPaymentProof(int paymentId) async {
+    return _dio.post('/payments/$paymentId/reject_proof/');
+  }
+
+  // Recurring / scheduled orders
+  Future<Response> getRecurringOrders() async {
+    return _dio.get('/recurring-orders/');
+  }
+
+  Future<Response> createRecurringOrder(Map<String, dynamic> data) async {
+    return _dio.post('/recurring-orders/', data: data);
+  }
+
+  Future<Response> updateRecurringOrder(int id, Map<String, dynamic> data) async {
+    return _dio.patch('/recurring-orders/$id/', data: data);
+  }
+
+  Future<Response> deleteRecurringOrder(int id) async {
+    return _dio.delete('/recurring-orders/$id/');
   }
 }
 

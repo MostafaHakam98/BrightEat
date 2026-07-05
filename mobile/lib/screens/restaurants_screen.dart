@@ -58,6 +58,11 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
           ),
           actions: [
             IconButton(
+              icon: const Icon(Icons.link),
+              onPressed: () => _showAddFromTalabatDialog(context),
+              tooltip: 'Add from Talabat',
+            ),
+            IconButton(
               icon: const Icon(Icons.add),
               onPressed: () => _showAddRestaurantDialog(context),
               tooltip: 'Add Restaurant',
@@ -103,6 +108,12 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () => _showAddFromTalabatDialog(context),
+                    icon: const Icon(Icons.link),
+                    label: const Text('Add from Talabat'),
                   ),
                 ],
               ),
@@ -350,6 +361,12 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                   ],
                 ),
               ),
+              // Sync menu from Talabat
+              IconButton(
+                icon: Icon(Icons.sync, color: cardColor[700]),
+                tooltip: 'Sync menu',
+                onPressed: () => _syncRestaurantMenu(context, restaurant),
+              ),
               // Arrow icon
               Icon(
                 Icons.chevron_right,
@@ -408,6 +425,203 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
         ],
       ),
     );
+  }
+
+  void _showAddFromTalabatDialog(BuildContext context) {
+    final urlController = TextEditingController();
+    bool syncNow = true;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Add from Talabat'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: urlController,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Talabat URL',
+                  hintText: 'https://www.talabat.com/egypt/restaurant/...',
+                ),
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Sync now'),
+                value: syncNow,
+                onChanged: (value) => setDialogState(() => syncNow = value ?? true),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final url = urlController.text.trim();
+                if (!url.contains('talabat.com')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a valid talabat.com URL'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                final ordersProvider =
+                    Provider.of<OrdersProvider>(context, listen: false);
+                final svc = ordersProvider.ordersService;
+                Navigator.pop(dialogContext);
+
+                final result =
+                    await svc.addRestaurantFromTalabat(url, syncNow: syncNow);
+                if (!context.mounted) return;
+
+                if (result['success'] == true) {
+                  final taskId = result['taskId'] as String?;
+                  if (taskId != null) {
+                    await _runTaskWithProgress(
+                      context,
+                      taskId,
+                      successMessage: 'Menu synced ✓',
+                      appendManualHint: true,
+                    );
+                  } else {
+                    await ordersProvider.fetchRestaurants();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Restaurant added from Talabat'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        result['error']?.toString() ??
+                            'Failed to add restaurant',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _syncRestaurantMenu(
+      BuildContext context, Restaurant restaurant) async {
+    final svc =
+        Provider.of<OrdersProvider>(context, listen: false).ordersService;
+    final result = await svc.syncRestaurantMenu(restaurant.id);
+    if (!context.mounted) return;
+
+    if (result['success'] == true) {
+      final taskId = result['taskId'] as String?;
+      if (taskId != null) {
+        await _runTaskWithProgress(
+          context,
+          taskId,
+          successMessage: 'Menu synced ✓',
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sync started'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['error']?.toString() ?? 'Sync failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Shows a non-dismissible progress dialog and polls the Celery task until it
+  /// finishes, updating the status text as progress messages arrive.
+  Future<void> _runTaskWithProgress(
+    BuildContext context,
+    String taskId, {
+    required String successMessage,
+    bool appendManualHint = false,
+  }) async {
+    final ordersProvider = Provider.of<OrdersProvider>(context, listen: false);
+    final svc = ordersProvider.ordersService;
+    final statusNotifier = ValueNotifier<String>('Starting sync…');
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 20),
+            Expanded(
+              child: ValueListenableBuilder<String>(
+                valueListenable: statusNotifier,
+                builder: (_, status, __) => Text(status),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final result = await svc.pollTaskStatus(
+      taskId,
+      onProgress: (state, message) {
+        statusNotifier.value = message ?? state;
+      },
+    );
+
+    if (!context.mounted) {
+      statusNotifier.dispose();
+      return;
+    }
+    Navigator.pop(context); // close the progress dialog
+    WidgetsBinding.instance.addPostFrameCallback((_) => statusNotifier.dispose());
+
+    if (result['success'] == true) {
+      await ordersProvider.fetchRestaurants();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(successMessage),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      var error = result['error']?.toString() ?? 'Sync failed';
+      if (appendManualHint) {
+        error = '$error — you can still add items manually.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
 
