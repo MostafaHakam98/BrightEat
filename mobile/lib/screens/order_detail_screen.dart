@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/orders_provider.dart';
 import '../providers/auth_provider.dart';
@@ -552,6 +553,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _addMyUsual(order, ordersProvider),
+                icon: const Icon(Icons.bolt),
+                label: const Text('Add My Usual'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -1177,8 +1193,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         : Colors.orange[200]!,
                   ),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(
+                      children: [
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1274,8 +1293,752 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     ],
                   ],
                 ),
+                    _buildPaymentProofSection(
+                      payment,
+                      order,
+                      ordersProvider,
+                      isCurrentUser,
+                      isCollector || authProvider.isManager,
+                    ),
+                  ],
+                ),
               );
             }),
+            if (order.settleMessage != null &&
+                order.settleMessage!.isNotEmpty &&
+                order.status != 'OPEN') ...[
+              const Divider(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(
+                          ClipboardData(text: order.settleMessage!),
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Settle-up copied to clipboard!'),
+                            duration: Duration(seconds: 2),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.assignment),
+                      label: const Text('Copy Settle-up'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final uri = Uri.parse(
+                          'https://wa.me/?text=${Uri.encodeComponent(order.settleMessage!)}',
+                        );
+                        try {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Could not open WhatsApp: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.chat),
+                      label: const Text('Share on WhatsApp'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF25D366),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Per-payment proof UI: upload for the payer, status chip, and
+  /// confirm/reject controls for the collector/manager.
+  Widget _buildPaymentProofSection(
+    Payment payment,
+    CollectionOrder order,
+    OrdersProvider ordersProvider,
+    bool isCurrentUser,
+    bool canManage,
+  ) {
+    final children = <Widget>[];
+
+    // Status chip driven by proof_status.
+    if (payment.proofStatus == 'claimed') {
+      children.add(_buildProofChip(
+        'Proof sent — awaiting confirmation',
+        Icons.hourglass_top,
+        Colors.amber,
+      ));
+    } else if (payment.proofStatus == 'rejected') {
+      children.add(_buildProofChip(
+        'Proof rejected — re-upload',
+        Icons.error_outline,
+        Colors.red,
+      ));
+    }
+
+    // Payer's own unpaid payment → allow uploading proof.
+    if (isCurrentUser && !payment.isPaid) {
+      children.add(
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => _uploadPaymentProof(payment, order, ordersProvider),
+            icon: const Icon(Icons.upload_file, size: 18),
+            label: Text(
+              payment.proofStatus == 'rejected' ? 'Re-upload proof' : 'Upload proof',
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Collector/manager review controls for a claimed proof.
+    if (canManage && payment.proofStatus == 'claimed') {
+      children.add(
+        Row(
+          children: [
+            if (payment.proofImageUrl != null) ...[
+              InkWell(
+                onTap: () async {
+                  try {
+                    await launchUrl(
+                      Uri.parse(payment.proofImageUrl!),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  } catch (_) {}
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: payment.proofImageUrl!,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => const SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    ),
+                    errorWidget: (context, url, error) =>
+                        const Icon(Icons.receipt_long, size: 32),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            TextButton.icon(
+              onPressed: () async {
+                final ok = await ordersProvider.ordersService
+                    .confirmPaymentProof(payment.id);
+                if (!mounted) return;
+                if (ok) {
+                  await ordersProvider.fetchOrderByCode(order.code);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Proof confirmed'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Failed to confirm proof'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.check, size: 18, color: Colors.green),
+              label: const Text('Confirm', style: TextStyle(color: Colors.green)),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                final ok = await ordersProvider.ordersService
+                    .rejectPaymentProof(payment.id);
+                if (!mounted) return;
+                if (ok) {
+                  await ordersProvider.fetchOrderByCode(order.code);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Proof rejected'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Failed to reject proof'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.close, size: 18, color: Colors.red),
+              label: const Text('Reject', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (children.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _buildProofChip(String label, IconData icon, MaterialColor color) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(dark ? 0.2 : 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: dark ? color[200] : color[800]),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: dark ? color[200] : color[800],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _uploadPaymentProof(
+    Payment payment,
+    CollectionOrder order,
+    OrdersProvider ordersProvider,
+  ) async {
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked == null) return;
+      final result = await ordersProvider.ordersService
+          .uploadPaymentProof(payment.id, picked.path);
+      if (!mounted) return;
+      if (result['success'] == true) {
+        await ordersProvider.fetchOrderByCode(order.code);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment proof uploaded'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['error']?.toString() ?? 'Upload failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not pick image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Lock (with optional custom fee split) ──────────────────────
+  Future<void> _handleLock(CollectionOrder order, OrdersProvider ordersProvider) async {
+    if (order.feeSplitRule == 'custom' &&
+        (order.items != null && order.items!.isNotEmpty)) {
+      await _showCustomSplitLockDialog(order, ordersProvider);
+      return;
+    }
+    final result = await ordersProvider.ordersService.lockOrderResult(order.id);
+    if (!mounted) return;
+    if (result['success'] == true) {
+      await ordersProvider.fetchOrderByCode(order.code);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order locked'), backgroundColor: Colors.orange),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['error']?.toString() ?? 'Failed to lock order'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showCustomSplitLockDialog(
+      CollectionOrder order, OrdersProvider ordersProvider) async {
+    // Participants = distinct users who have items.
+    final Map<int, User> participants = {};
+    final Map<int, double> itemsTotalByUser = {};
+    for (final it in order.items!) {
+      participants.putIfAbsent(it.user.id, () => it.user);
+      itemsTotalByUser[it.user.id] =
+          (itemsTotalByUser[it.user.id] ?? 0) + it.totalPrice;
+    }
+
+    final subtotal =
+        itemsTotalByUser.values.fold<double>(0, (a, b) => a + b);
+    final fees = order.deliveryFee + order.tip + order.serviceFee;
+    final totalCost = subtotal + fees;
+
+    // Prefill: each user's items total + proportional share of fees.
+    final controllers = <int, TextEditingController>{};
+    for (final uid in participants.keys) {
+      final itemsTotal = itemsTotalByUser[uid] ?? 0;
+      final prefill =
+          subtotal > 0 ? itemsTotal + (itemsTotal / subtotal) * fees : 0;
+      controllers[uid] = TextEditingController(
+        text: subtotal > 0 ? prefill.toStringAsFixed(2) : '',
+      );
+    }
+
+    double allocated() {
+      double sum = 0;
+      for (final c in controllers.values) {
+        sum += double.tryParse(c.text.trim()) ?? 0;
+      }
+      return sum;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final total = allocated();
+          final matches = (total - totalCost).abs() < 0.01;
+          return AlertDialog(
+            title: const Text('Custom Fee Split'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Enter how much each person owes. The total must match '
+                      '${totalCost.toStringAsFixed(2)} EGP.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ...participants.values.map((user) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                user.username,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 110,
+                              child: TextField(
+                                controller: controllers[user.id],
+                                keyboardType: const TextInputType.numberWithOptions(
+                                    decimal: true),
+                                textAlign: TextAlign.end,
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  suffixText: 'EGP',
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: (_) => setDialogState(() {}),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    const Divider(),
+                    Text(
+                      'Allocated ${total.toStringAsFixed(2)} / '
+                      'Total ${totalCost.toStringAsFixed(2)} EGP',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: matches ? Colors.green : Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: matches
+                    ? () async {
+                        final customAmounts = <String, dynamic>{};
+                        controllers.forEach((uid, c) {
+                          customAmounts[uid.toString()] = c.text.trim();
+                        });
+                        final result = await ordersProvider.ordersService
+                            .lockOrderResult(order.id,
+                                customAmounts: customAmounts);
+                        if (!mounted) return;
+                        if (result['success'] == true) {
+                          Navigator.pop(context);
+                          await ordersProvider.fetchOrderByCode(order.code);
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Order locked'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        } else {
+                          // Keep the dialog open; surface the backend error.
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(result['error']?.toString() ??
+                                  'Failed to lock order'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('Confirm & Lock'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Add my usual ───────────────────────────────────────────────
+  Future<void> _addMyUsual(
+      CollectionOrder order, OrdersProvider ordersProvider) async {
+    final data =
+        await ordersProvider.ordersService.getMyUsual(order.restaurant.id);
+    if (!mounted) return;
+    final items = (data?['items'] as List?) ?? [];
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No previous order here yet')),
+      );
+      return;
+    }
+    int added = 0;
+    for (final raw in items) {
+      final it = Map<String, dynamic>.from(raw as Map);
+      final ok = await ordersProvider.addOrderItem({
+        'order': order.id,
+        'menu_item': it['menu_item'],
+        'quantity': it['quantity'],
+        'unit_price': it['unit_price'],
+        'note': it['note'] ?? '',
+      });
+      if (ok) added++;
+    }
+    if (!mounted) return;
+    await ordersProvider.fetchOrderByCode(order.code);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added $added items from your last order'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  // ── Talabat order sheet ────────────────────────────────────────
+  Future<void> _showTalabatSheetDialog(
+      CollectionOrder order, OrdersProvider ordersProvider) async {
+    final sheet = await ordersProvider.ordersService.getTalabatSheet(order.id);
+    if (!mounted) return;
+    if (sheet == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not load Talabat sheet'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final items = (sheet['items'] as List?) ?? [];
+    final talabatUrl = sheet['talabat_url'] as String?;
+    final sheetText = sheet['sheet_text']?.toString() ?? '';
+    final totalItems = sheet['total_items_cost'];
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.delivery_dining, color: Colors.deepOrange[700]),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Talabat Order Sheet',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  children: [
+                    ...items.map((raw) {
+                      final it = Map<String, dynamic>.from(raw as Map);
+                      final notes = (it['notes'] as List?) ?? [];
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${it['quantity']} × ${it['name']}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          ...notes.map((n) => Padding(
+                                padding: const EdgeInsets.only(left: 16, top: 2),
+                                child: Text(
+                                  '– ${n.toString()}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.color,
+                                  ),
+                                ),
+                              )),
+                          const SizedBox(height: 10),
+                        ],
+                      );
+                    }),
+                    if (totalItems != null) ...[
+                      const Divider(),
+                      Text(
+                        'Items total: $totalItems EGP',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                    if (talabatUrl == null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'No Talabat link is set for this restaurant.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: sheetText));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Order sheet copied to clipboard!'),
+                            duration: Duration(seconds: 2),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.copy),
+                      label: const Text('Copy'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                  if (talabatUrl != null) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          try {
+                            await launchUrl(
+                              Uri.parse(talabatUrl),
+                              mode: LaunchMode.externalApplication,
+                            );
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Could not open Talabat: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.open_in_new),
+                        label: const Text('Open Talabat'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepOrange,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Transfer collector ─────────────────────────────────────────
+  Future<void> _showTransferCollectorDialog(
+      CollectionOrder order, OrdersProvider ordersProvider) async {
+    final Map<int, User> candidates = {};
+    for (final it in (order.items ?? [])) {
+      candidates.putIfAbsent(it.user.id, () => it.user);
+    }
+    for (final u in (order.assignedUsers ?? [])) {
+      candidates.putIfAbsent(u.id, () => u);
+    }
+    candidates.remove(order.collector.id);
+
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No other participants to transfer to')),
+      );
+      return;
+    }
+
+    int? selectedId;
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Transfer Collector'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: candidates.values
+                  .map(
+                    (u) => RadioListTile<int>(
+                      title: Text(u.username),
+                      value: u.id,
+                      groupValue: selectedId,
+                      onChanged: (v) => setDialogState(() => selectedId = v),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: selectedId == null
+                  ? null
+                  : () async {
+                      final result = await ordersProvider.ordersService
+                          .transferCollector(order.id, selectedId!);
+                      if (!mounted) return;
+                      if (result['success'] == true) {
+                        Navigator.pop(context);
+                        await ordersProvider.fetchOrderByCode(order.code);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Collector transferred'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(result['error']?.toString() ??
+                                'Failed to transfer collector'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+              child: const Text('Transfer'),
+            ),
           ],
         ),
       ),
@@ -1314,17 +2077,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               ),
               const SizedBox(height: 12),
               ElevatedButton.icon(
-                onPressed: () async {
-                  final success = await ordersProvider.lockOrder(order.id);
-                  if (success && mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Order locked'),
-                        backgroundColor: Colors.orange,
-                      ),
-                    );
-                  }
-                },
+                onPressed: () => _handleLock(order, ordersProvider),
                 icon: const Icon(Icons.lock),
                 label: const Text('Lock Order'),
                 style: ElevatedButton.styleFrom(
@@ -1335,6 +2088,34 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _showTransferCollectorDialog(order, ordersProvider),
+                icon: const Icon(Icons.swap_horiz),
+                label: const Text('Transfer Collector'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+            if ((order.status == 'LOCKED' || order.status == 'ORDERED') &&
+                (isCollector || isManager)) ...[
+              ElevatedButton.icon(
+                onPressed: () => _showTalabatSheetDialog(order, ordersProvider),
+                icon: const Icon(Icons.delivery_dining),
+                label: const Text('Talabat Order Sheet'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepOrange,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
             ],
             if (order.status == 'LOCKED' && (isCollector || isManager)) ...[
               ElevatedButton.icon(

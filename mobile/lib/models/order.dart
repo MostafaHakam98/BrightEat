@@ -29,6 +29,7 @@ class CollectionOrder {
   final String? collectorInstapayLink;
   final String? collectorInstapayQrCodeUrl;
   final String? shareMessage;
+  final String? settleMessage;
 
   CollectionOrder({
     required this.id,
@@ -56,6 +57,7 @@ class CollectionOrder {
     this.collectorInstapayLink,
     this.collectorInstapayQrCodeUrl,
     this.shareMessage,
+    this.settleMessage,
   });
 
   // Helper method to parse double from various types (int, double, String)
@@ -216,6 +218,7 @@ class CollectionOrder {
       collectorInstapayLink: json['collector_instapay_link'],
       collectorInstapayQrCodeUrl: json['collector_instapay_qr_code_url'],
       shareMessage: json['share_message'],
+      settleMessage: json['settle_message'],
     );
   }
 
@@ -251,6 +254,8 @@ class Payment {
   final double amount;
   final bool isPaid;
   final DateTime? paidAt;
+  final String proofStatus; // none | claimed | confirmed | rejected
+  final String? proofImageUrl;
 
   Payment({
     required this.id,
@@ -259,6 +264,8 @@ class Payment {
     required this.amount,
     required this.isPaid,
     this.paidAt,
+    this.proofStatus = 'none',
+    this.proofImageUrl,
   });
 
   // Helper method to parse double from various types (int, double, String)
@@ -293,6 +300,8 @@ class Payment {
       amount: _parseDouble(json['amount']) ?? 0.0,
       isPaid: json['is_paid'] ?? false,
       paidAt: json['paid_at'] != null ? DateTime.parse(json['paid_at']) : null,
+      proofStatus: json['proof_status'] ?? 'none',
+      proofImageUrl: json['proof_image_url'],
     );
   }
 
@@ -304,6 +313,8 @@ class Payment {
       'amount': amount,
       'is_paid': isPaid,
       'paid_at': paidAt?.toIso8601String(),
+      'proof_status': proofStatus,
+      'proof_image_url': proofImageUrl,
     };
   }
 }

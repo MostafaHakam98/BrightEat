@@ -267,6 +267,21 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionCard(
+                  icon: Icons.alarm,
+                  title: 'Scheduled',
+                  color: Colors.teal,
+                  onTap: () => context.push('/scheduled'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(child: SizedBox()),
+            ],
+          ),
         ],
       ),
                     );
