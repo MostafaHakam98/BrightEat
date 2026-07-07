@@ -129,6 +129,13 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          # Playwright's --with-deps runs `apt-get update`, which fails whenever
+          # a preinstalled third-party repo on the hosted runner serves a bad
+          # signature (packages.microsoft.com intermittently returns NOSPLIT).
+          # Drop those repos first so browser-dependency install isn't blocked
+          # by an unrelated mirror outage — Chromium's libs come from the Ubuntu
+          # archives, which are unaffected.
+          sudo grep -rlZ 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | sudo xargs -0 -r rm -f || true
           npx playwright install --with-deps chromium
 
       - name: Run golden-path E2E
