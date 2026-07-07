@@ -13,6 +13,7 @@ from rest_framework import status
 from .models import (
     User, Restaurant, Menu, MenuItem,
     CollectionOrder, OrderItem, Payment, Notification, AuditLog, PushSubscription,
+    MenuItemOptionGroup, MenuItemOption,
 )
 from .tasks import enforce_order_cutoffs, send_payment_reminders, purge_old_records
 
@@ -920,3 +921,131 @@ class AutoCloseStaleOrdersTest(TestCase):
         res = client.get('/api/orders/pending_payments/')
         owed = [p for p in res.data if p['payment_id'] == payment.id]
         self.assertEqual(len(owed), 1)
+
+
+class MenuItemOptionsTest(TestCase):
+    """Menu-item modifiers/options: price deltas, snapshot immutability,
+    variant uniqueness, and validation."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.collector = make_user('optcollector')
+        self.restaurant = Restaurant.objects.create(name='Costa', created_by=self.collector)
+        self.menu = Menu.objects.create(restaurant=self.restaurant, name='Coffee')
+        self.item = MenuItem.objects.create(
+            menu=self.menu, name='Cappuccino', price=Decimal('40.00')
+        )
+        # Required single-choice Size group: Regular (+0), Large (+10)
+        self.size = MenuItemOptionGroup.objects.create(
+            menu_item=self.item, name='Size', is_required=True, min_select=1, max_select=1
+        )
+        self.regular = MenuItemOption.objects.create(group=self.size, name='Regular', price_delta=Decimal('0'))
+        self.large = MenuItemOption.objects.create(group=self.size, name='Large', price_delta=Decimal('10.00'))
+        # Optional multi-select Add-ons group: Extra shot (+15)
+        self.addons = MenuItemOptionGroup.objects.create(
+            menu_item=self.item, name='Add-ons', is_required=False, min_select=0, max_select=3
+        )
+        self.extra_shot = MenuItemOption.objects.create(group=self.addons, name='Extra shot', price_delta=Decimal('15.00'))
+
+    def _auth(self, user):
+        token = get_token(self.client, user.username)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+    def _open_order(self):
+        res = self.client.post('/api/orders/', {'restaurant': self.restaurant.id}, format='json')
+        return res.data['id']
+
+    def _add(self, order_id, option_ids, quantity=1):
+        return self.client.post('/api/order-items/', {
+            'order': order_id,
+            'menu_item': self.item.id,
+            'quantity': quantity,
+            'selected_option_ids': option_ids,
+        }, format='json')
+
+    # Price = base + sum of chosen deltas, snapshotted onto the line item.
+    def test_unit_price_includes_option_deltas(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        res = self._add(order_id, [self.large.id, self.extra_shot.id], quantity=2)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        # 40 + 10 (Large) + 15 (Extra shot) = 65
+        self.assertEqual(Decimal(res.data['unit_price']), Decimal('65.00'))
+        self.assertEqual(Decimal(res.data['total_price']), Decimal('130.00'))
+        names = {o['name'] for o in res.data['selected_options']}
+        self.assertEqual(names, {'Large', 'Extra shot'})
+
+    # The MenuItem serializer nests groups + options for the chooser UI.
+    def test_menu_item_exposes_option_groups(self):
+        self._auth(self.collector)
+        res = self.client.get(f'/api/menu-items/?menu={self.menu.id}')
+        item = next(i for i in res.data if i['id'] == self.item.id)
+        group_names = {g['name'] for g in item['option_groups']}
+        self.assertEqual(group_names, {'Size', 'Add-ons'})
+
+    # Two variants of the same item coexist as separate lines for one user.
+    def test_variants_do_not_collide(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        r1 = self._add(order_id, [self.regular.id])
+        r2 = self._add(order_id, [self.large.id])
+        self.assertEqual(r1.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(r2.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(OrderItem.objects.filter(order_id=order_id).count(), 2)
+
+    # Same choice set collapses under the uniqueness constraint (duplicate rejected).
+    def test_identical_variant_is_duplicate(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        self._add(order_id, [self.large.id])
+        dup = self._add(order_id, [self.large.id])
+        self.assertEqual(dup.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # Editing the menu option later must NOT change an existing order line.
+    def test_snapshot_is_immutable(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        res = self._add(order_id, [self.large.id])
+        item_id = res.data['id']
+        # Manager bumps the Large surcharge from 10 to 25 afterwards.
+        self.large.price_delta = Decimal('25.00')
+        self.large.save()
+        line = OrderItem.objects.get(id=item_id)
+        self.assertEqual(line.unit_price, Decimal('50.00'))  # still 40 + 10
+        self.assertEqual(line.selected_options[0]['price_delta'], '10.00')
+
+    # Required group with no selection is rejected.
+    def test_required_group_enforced(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        res = self._add(order_id, [])
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # Selecting two options in a single-choice group is rejected.
+    def test_max_select_enforced(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        res = self._add(order_id, [self.regular.id, self.large.id])
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # An option that belongs to a different item is rejected.
+    def test_foreign_option_rejected(self):
+        other_item = MenuItem.objects.create(menu=self.menu, name='Latte', price=Decimal('45.00'))
+        other_group = MenuItemOptionGroup.objects.create(menu_item=other_item, name='Size', max_select=1)
+        foreign = MenuItemOption.objects.create(group=other_group, name='Large', price_delta=Decimal('10'))
+        self._auth(self.collector)
+        order_id = self._open_order()
+        res = self.client.post('/api/order-items/', {
+            'order': order_id, 'menu_item': self.item.id, 'quantity': 1,
+            'selected_option_ids': [self.regular.id, foreign.id],
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # Order total reflects the option-adjusted line prices.
+    def test_order_total_includes_options(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        self._add(order_id, [self.large.id])  # 50
+        order = CollectionOrder.objects.get(id=order_id)
+        self.assertEqual(order.get_total_items_cost(), Decimal('50.00'))

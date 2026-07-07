@@ -2352,6 +2352,41 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final noteController = TextEditingController();
     int quantity = 1;
     int? selectedUserId; // null means current user
+    // groupId -> chosen option ids for the selected item
+    Map<int, Set<int>> selectedOptions = {};
+
+    // Pre-select any option flagged default when the item changes.
+    void resetOptionsFor(MenuItem? item) {
+      selectedOptions = {};
+      for (final g in item?.optionGroups ?? <MenuItemOptionGroup>[]) {
+        selectedOptions[g.id] =
+            g.options.where((o) => o.isDefault && o.isAvailable).map((o) => o.id).toSet();
+      }
+    }
+
+    // Unit price = base + sum of chosen deltas.
+    double adjustedUnitPrice() {
+      if (selectedItem == null) return 0;
+      double total = selectedItem!.price;
+      for (final g in selectedItem!.optionGroups) {
+        for (final o in g.options) {
+          if (selectedOptions[g.id]?.contains(o.id) ?? false) total += o.priceDelta;
+        }
+      }
+      return total;
+    }
+
+    // All required groups satisfied within their min/max.
+    bool optionsValid() {
+      if (selectedItem == null) return false;
+      for (final g in selectedItem!.optionGroups) {
+        final count = selectedOptions[g.id]?.length ?? 0;
+        if (count < g.effectiveMin || count > g.maxSelect) return false;
+      }
+      return true;
+    }
+
+    List<int> flatOptionIds() => selectedOptions.values.expand((s) => s).toList();
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final isCollector = order.collector.id == authProvider.user?.id;
     final isManager = authProvider.isManager;
@@ -2414,7 +2449,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                               ),
                             );
                           }).toList(),
-                          onChanged: (value) => setState(() => selectedItem = value),
+                          onChanged: (value) => setState(() {
+                            selectedItem = value;
+                            resetOptionsFor(value);
+                          }),
                         ),
                         const SizedBox(height: 16),
                         TextField(
@@ -2440,6 +2478,53 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           ),
                           maxLines: 2,
                         ),
+                        if (selectedItem != null && selectedItem!.optionGroups.isNotEmpty)
+                          for (final group in selectedItem!.optionGroups) ...[
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                group.isRequired ? '${group.name} *' : group.name,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                group.maxSelect == 1 ? 'Choose one' : 'Choose up to ${group.maxSelect}',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                for (final opt in group.options.where((o) => o.isAvailable))
+                                  FilterChip(
+                                    label: Text(
+                                      opt.priceDelta != 0
+                                          ? '${opt.name} (${opt.priceDelta > 0 ? '+' : ''}${opt.priceDelta.toStringAsFixed(2)})'
+                                          : opt.name,
+                                    ),
+                                    selected: selectedOptions[group.id]?.contains(opt.id) ?? false,
+                                    onSelected: (sel) => setState(() {
+                                      final current = selectedOptions[group.id] ?? <int>{};
+                                      if (group.maxSelect == 1) {
+                                        selectedOptions[group.id] = {opt.id};
+                                      } else {
+                                        if (current.contains(opt.id)) {
+                                          current.remove(opt.id);
+                                        } else if (current.length < group.maxSelect) {
+                                          current.add(opt.id);
+                                        }
+                                        selectedOptions[group.id] = current;
+                                      }
+                                    }),
+                                  ),
+                              ],
+                            ),
+                          ],
                         if (selectedItem != null) ...[
                           const SizedBox(height: 16),
                           // Searchable user assignment dropdown
@@ -2471,7 +2556,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                 ),
                                 Flexible(
                                   child: Text(
-                                    '${(selectedItem!.price * quantity).toStringAsFixed(2)} EGP',
+                                    '${(adjustedUnitPrice() * quantity).toStringAsFixed(2)} EGP',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Theme.of(context).brightness == Brightness.dark
@@ -2498,17 +2583,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ),
             if (menuItems.isNotEmpty)
               ElevatedButton(
-                onPressed: selectedItem == null
+                onPressed: (selectedItem == null || !optionsValid())
                     ? null
                     : () async {
                         final itemData = <String, dynamic>{
                           'order': order.id,
                           'menu_item': selectedItem!.id,
                           'quantity': quantity,
-                          'unit_price': selectedItem!.price,
-                          'total_price': selectedItem!.price * quantity,
                         };
-                        
+
+                        // Include chosen options; server snapshots them and
+                        // derives the final unit/total price.
+                        if (selectedItem!.optionGroups.isNotEmpty) {
+                          itemData['selected_option_ids'] = flatOptionIds();
+                        }
+
                         // Add note if provided
                         if (noteController.text.trim().isNotEmpty) {
                           itemData['note'] = noteController.text.trim();
@@ -3070,6 +3159,26 @@ class _ExpandableItemCardState extends State<_ExpandableItemCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Chosen options (snapshot)
+                    if (widget.item.selectedOptions.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: widget.item.selectedOptions
+                            .map((o) => Chip(
+                                  label: Text(
+                                    o.priceDelta != 0
+                                        ? '${o.name} (${o.priceDelta > 0 ? '+' : ''}${o.priceDelta.toStringAsFixed(2)})'
+                                        : o.name,
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                ))
+                            .toList(),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     // Description
                     if (widget.item.menuItem?.description != null &&
                         widget.item.menuItem!.description!.isNotEmpty) ...[

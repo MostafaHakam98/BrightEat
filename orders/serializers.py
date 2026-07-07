@@ -1,3 +1,5 @@
+import hashlib
+from decimal import Decimal
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import authenticate
@@ -6,9 +8,22 @@ from django.utils import timezone as tz
 from .models import (
     User, Restaurant, Menu, MenuItem, CollectionOrder,
     OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification,
-    RecurringOrder,
+    RecurringOrder, MenuItemOptionGroup, MenuItemOption,
 )
 from .utils import format_item_name
+
+
+def _options_signature(option_ids):
+    """Deterministic fingerprint of a chosen option-id set.
+
+    Order-independent (ids are sorted) so the same choice set always yields the
+    same signature, which lets identical variants merge under the OrderItem
+    uniqueness constraint. Empty string when nothing is chosen.
+    """
+    if not option_ids:
+        return ''
+    joined = ','.join(str(i) for i in sorted(option_ids))
+    return hashlib.sha256(joined.encode()).hexdigest()
 
 
 class OptionalUserField(serializers.PrimaryKeyRelatedField):
@@ -162,14 +177,31 @@ class MenuSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class MenuItemOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MenuItemOption
+        fields = ['id', 'group', 'name', 'price_delta', 'is_default', 'is_available', 'display_order']
+        read_only_fields = ['id']
+
+
+class MenuItemOptionGroupSerializer(serializers.ModelSerializer):
+    options = MenuItemOptionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = MenuItemOptionGroup
+        fields = ['id', 'menu_item', 'name', 'is_required', 'min_select', 'max_select', 'display_order', 'options']
+        read_only_fields = ['id']
+
+
 class MenuItemSerializer(serializers.ModelSerializer):
     menu_name = serializers.CharField(source='menu.name', read_only=True)
+    option_groups = MenuItemOptionGroupSerializer(many=True, read_only=True)
 
     class Meta:
         model = MenuItem
         fields = [
             'id', 'menu', 'menu_name', 'name', 'description', 'price',
-            'is_available', 'section_name', 'image_url', 'created_at',
+            'is_available', 'section_name', 'image_url', 'created_at', 'option_groups',
         ]
         read_only_fields = ['id', 'created_at']
 
@@ -188,17 +220,23 @@ class OrderItemSerializer(serializers.ModelSerializer):
     custom_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     custom_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
     user = OptionalUserField(queryset=User.objects.all())
+    # Chosen option ids (write-only input); server snapshots them into selected_options.
+    selected_option_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, write_only=True
+    )
     # Response fields for prompts
     suggest_add_to_menu = serializers.BooleanField(read_only=True)
     suggest_update_price = serializers.BooleanField(read_only=True)
     existing_menu_item_id = serializers.IntegerField(read_only=True, allow_null=True)
-    
+
     class Meta:
         model = OrderItem
-        fields = ['id', 'order', 'user', 'user_name', 'menu_item', 'custom_name', 
+        fields = ['id', 'order', 'user', 'user_name', 'menu_item', 'custom_name',
                   'custom_price', 'quantity', 'unit_price', 'total_price', 'item_name', 'note', 'created_at',
+                  'selected_option_ids', 'selected_options', 'options_signature',
                   'suggest_add_to_menu', 'suggest_update_price', 'existing_menu_item_id']
-        read_only_fields = ['id', 'unit_price', 'total_price', 'created_at', 
+        read_only_fields = ['id', 'unit_price', 'total_price', 'created_at',
+                           'selected_options', 'options_signature',
                            'suggest_add_to_menu', 'suggest_update_price', 'existing_menu_item_id']
         extra_kwargs = {
             'user': {'required': False, 'allow_null': True},
@@ -287,27 +325,95 @@ class OrderItemSerializer(serializers.ModelSerializer):
         # But if provided, it must be a valid user
         return value
     
+    def _validate_and_snapshot_options(self, menu_item, option_ids):
+        """Validate chosen option ids against the item's groups and return
+        (snapshot_list, signature). Raises ValidationError on any rule breach.
+        """
+        # De-duplicate while preserving nothing (order comes from group/option ordering).
+        option_ids = list(dict.fromkeys(option_ids))
+        groups = list(menu_item.option_groups.prefetch_related('options').all())
+
+        # Map each chosen id to its option, ensuring it belongs to this item and is available.
+        valid_options = {}
+        for group in groups:
+            for opt in group.options.all():
+                valid_options[opt.id] = (group, opt)
+
+        chosen = []
+        for oid in option_ids:
+            if oid not in valid_options:
+                raise serializers.ValidationError(
+                    f"Option {oid} is not a valid option for '{menu_item.name}'."
+                )
+            group, opt = valid_options[oid]
+            if not opt.is_available:
+                raise serializers.ValidationError(f"Option '{opt.name}' is not available.")
+            chosen.append((group, opt))
+
+        # Per-group cardinality checks.
+        for group in groups:
+            count = sum(1 for g, _ in chosen if g.id == group.id)
+            if count < group.effective_min:
+                raise serializers.ValidationError(
+                    f"'{group.name}' requires at least {group.effective_min} selection(s)."
+                )
+            if count > group.max_select:
+                raise serializers.ValidationError(
+                    f"'{group.name}' allows at most {group.max_select} selection(s)."
+                )
+
+        # Build a deterministic snapshot ordered by (group order, option order).
+        chosen.sort(key=lambda go: (go[0].display_order, go[0].id, go[1].display_order, go[1].id))
+        snapshot = [
+            {
+                'id': opt.id,
+                'group': group.name,
+                'name': opt.name,
+                'price_delta': str(opt.price_delta),
+            }
+            for group, opt in chosen
+        ]
+        signature = _options_signature([opt.id for _, opt in chosen])
+        return snapshot, signature
+
     def validate(self, attrs):
         # Either menu_item OR custom_name must be provided, but not both
         has_menu_item = attrs.get('menu_item') is not None
         has_custom = bool(attrs.get('custom_name'))
-        
+
         if not has_menu_item and not has_custom:
             raise serializers.ValidationError("Either menu_item or custom_name must be provided")
         if has_menu_item and has_custom:
             raise serializers.ValidationError("Cannot specify both menu_item and custom_name")
         if has_custom and not attrs.get('custom_price'):
             raise serializers.ValidationError("custom_price is required when using custom_name")
-        
+
         # Format custom_name if provided
         if has_custom and attrs.get('custom_name'):
             attrs['custom_name'] = format_item_name(attrs['custom_name'])
-        
+
         # If menu_item is provided, ensure custom_name is empty string
         # The model doesn't allow null, only blank (empty string)
         if has_menu_item:
             attrs['custom_name'] = ''
-        
+
+        # Resolve chosen options into a price-bearing snapshot.
+        # On create we always validate (so required groups are enforced even when
+        # the client sends nothing); on partial update we only touch options when
+        # selected_option_ids was actually provided.
+        provided = 'selected_option_ids' in attrs
+        option_ids = attrs.pop('selected_option_ids', None)
+        target_item = attrs.get('menu_item') or (self.instance.menu_item if self.instance else None)
+        is_create = self.instance is None
+
+        if target_item and (is_create or provided):
+            snapshot, signature = self._validate_and_snapshot_options(target_item, option_ids or [])
+            attrs['selected_options'] = snapshot
+            attrs['options_signature'] = signature
+        elif provided and not target_item:
+            # Options only apply to menu items, never custom ad-hoc items.
+            raise serializers.ValidationError("Options can only be selected for menu items.")
+
         return attrs
 
 

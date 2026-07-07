@@ -1,6 +1,23 @@
 import 'user.dart';
 import 'menu_item.dart';
 
+/// Snapshot of one chosen option on an order line (immutable history).
+class SelectedOption {
+  final String group;
+  final String name;
+  final double priceDelta;
+
+  SelectedOption({required this.group, required this.name, required this.priceDelta});
+
+  factory SelectedOption.fromJson(Map<String, dynamic> json) {
+    return SelectedOption(
+      group: json['group'] ?? '',
+      name: json['name'] ?? '',
+      priceDelta: parseDouble(json['price_delta']) ?? 0.0,
+    );
+  }
+}
+
 class OrderItem {
   final int id;
   final int order;
@@ -12,6 +29,7 @@ class OrderItem {
   final int quantity;
   final double totalPrice;
   final String? note;
+  final List<SelectedOption> selectedOptions;
   final bool? suggestAddToMenu;
   final bool? suggestUpdatePrice;
   final int? existingMenuItemId;
@@ -27,6 +45,7 @@ class OrderItem {
     required this.quantity,
     required this.totalPrice,
     this.note,
+    this.selectedOptions = const [],
     this.suggestAddToMenu,
     this.suggestUpdatePrice,
     this.existingMenuItemId,
@@ -81,6 +100,8 @@ class OrderItem {
       }
     }
 
+    final rawOptions = (json['selected_options'] as List?) ?? [];
+
     return OrderItem(
       id: json['id'],
       order: json['order'],
@@ -92,6 +113,9 @@ class OrderItem {
       quantity: json['quantity'],
       totalPrice: _parseDouble(json['total_price']) ?? 0.0,
       note: json['note'],
+      selectedOptions: rawOptions
+          .map((o) => SelectedOption.fromJson(Map<String, dynamic>.from(o as Map)))
+          .toList(),
       suggestAddToMenu: json['suggest_add_to_menu'],
       suggestUpdatePrice: json['suggest_update_price'],
       existingMenuItemId: json['existing_menu_item_id'],

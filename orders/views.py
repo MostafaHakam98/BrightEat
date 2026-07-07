@@ -15,13 +15,15 @@ import io
 import logging
 from .models import (
     User, Restaurant, Menu, MenuItem, CollectionOrder,
-    OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification
+    OrderItem, Payment, AuditLog, FeePreset, Recommendation, Notification,
+    MenuItemOptionGroup, MenuItemOption
 )
 from .serializers import (
     UserSerializer, UserRegistrationSerializer, LoginSerializer, ChangePasswordSerializer,
     RestaurantSerializer, MenuSerializer, MenuItemSerializer, CollectionOrderSerializer,
     OrderItemSerializer, PaymentSerializer, AuditLogSerializer, FeePresetSerializer,
-    RecommendationSerializer, NotificationSerializer, RecurringOrderSerializer
+    RecommendationSerializer, NotificationSerializer, RecurringOrderSerializer,
+    MenuItemOptionGroupSerializer, MenuItemOptionSerializer
 )
 from .utils import format_item_name
 from .websocket_utils import broadcast_order_update, broadcast_new_order
@@ -420,6 +422,36 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save()
+
+
+class MenuItemOptionGroupViewSet(viewsets.ModelViewSet):
+    """CRUD for option groups (e.g. "Size") attached to a menu item."""
+    queryset = MenuItemOptionGroup.objects.all()
+    serializer_class = MenuItemOptionGroupSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = MenuItemOptionGroup.objects.prefetch_related('options')
+        menu_item_id = self.request.query_params.get('menu_item')
+        if menu_item_id:
+            queryset = queryset.filter(menu_item_id=menu_item_id)
+        return queryset
+
+
+class MenuItemOptionViewSet(viewsets.ModelViewSet):
+    """CRUD for individual options (e.g. "Large +10") within a group."""
+    queryset = MenuItemOption.objects.all()
+    serializer_class = MenuItemOptionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = MenuItemOption.objects.all()
+        group_id = self.request.query_params.get('group')
+        if group_id:
+            queryset = queryset.filter(group_id=group_id)
+        return queryset
 
 
 class CollectionOrderViewSet(viewsets.ModelViewSet):
@@ -1282,9 +1314,15 @@ class OrderItemViewSet(viewsets.ModelViewSet):
             if request.user not in order.assigned_users.all() and request.user.role not in ['manager', 'admin'] and order.collector != request.user:
                 raise ValidationError("You are not assigned to this order")
         
-        # Set unit price
+        # Set unit price. For menu items, the base price plus the sum of the
+        # chosen options' price deltas (both snapshotted at add time).
         if serializer.validated_data.get('menu_item'):
-            serializer.validated_data['unit_price'] = serializer.validated_data['menu_item'].price
+            base = serializer.validated_data['menu_item'].price
+            delta = sum(
+                (Decimal(str(o['price_delta'])) for o in serializer.validated_data.get('selected_options', [])),
+                Decimal('0'),
+            )
+            serializer.validated_data['unit_price'] = base + delta
         elif serializer.validated_data.get('custom_price'):
             serializer.validated_data['unit_price'] = serializer.validated_data['custom_price']
         
@@ -1396,11 +1434,18 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         if 'custom_name' in serializer.validated_data and serializer.validated_data.get('custom_name'):
             serializer.validated_data['custom_name'] = format_item_name(serializer.validated_data['custom_name'])
         
-        # Update unit price if custom_price is provided
+        # Recompute unit price when a custom price, the menu item, or its chosen
+        # options change. A quantity-only edit leaves unit_price untouched (save()
+        # re-derives total_price from the stored snapshot).
         if serializer.validated_data.get('custom_price'):
             serializer.validated_data['unit_price'] = serializer.validated_data['custom_price']
-        elif serializer.validated_data.get('menu_item'):
-            serializer.validated_data['unit_price'] = serializer.validated_data['menu_item'].price
+        else:
+            menu_item = serializer.validated_data.get('menu_item') or instance.menu_item
+            options_changed = 'selected_options' in serializer.validated_data
+            if menu_item and ('menu_item' in serializer.validated_data or options_changed):
+                options = serializer.validated_data.get('selected_options', instance.selected_options)
+                delta = sum((Decimal(str(o['price_delta'])) for o in options), Decimal('0'))
+                serializer.validated_data['unit_price'] = menu_item.price + delta
         
         self.perform_update(serializer)
         

@@ -77,10 +77,15 @@
         </div>
         <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-            <h2 class="text-xl font-semibold dark:text-white">
-              {{ selectedMenu.name }} Items
-              <span class="text-sm font-normal text-gray-500 dark:text-gray-400 ml-1">({{ menuItems.length }})</span>
-            </h2>
+            <div>
+              <h2 class="text-xl font-semibold dark:text-white">
+                {{ selectedMenu.name }} Items
+                <span class="text-sm font-normal text-gray-500 dark:text-gray-400 ml-1">({{ menuItems.length }})</span>
+              </h2>
+              <p v-if="selectedMenu.last_synced_at" class="text-xs mt-0.5" :class="pricesAreStale ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500'">
+                <span v-if="pricesAreStale">⚠ </span>Prices last synced {{ syncedLabel }}
+              </p>
+            </div>
             <button
               @click="showCreateItemModal = true"
               class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 shrink-0"
@@ -147,6 +152,12 @@
                     </div>
                   </div>
                   <div class="flex space-x-2 ml-4">
+                    <button
+                      @click="openOptions(item)"
+                      class="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700"
+                    >
+                      Options<span v-if="item.option_groups?.length"> ({{ item.option_groups.length }})</span>
+                    </button>
                     <button
                       @click="editItem(item)"
                       class="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
@@ -286,6 +297,79 @@
         </form>
       </div>
     </div>
+
+    <!-- Manage Options Modal -->
+    <div
+      v-if="optionsItem"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      @click="closeOptions"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto" @click.stop>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-semibold dark:text-white">Options — {{ optionsItem.name }}</h2>
+          <button @click="closeOptions" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl leading-none">&times;</button>
+        </div>
+
+        <!-- Existing groups -->
+        <div v-if="!optionsItem.option_groups?.length" class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          No option groups yet. Add one below (e.g. "Size" or "Add-ons").
+        </div>
+        <div v-for="group in optionsItem.option_groups || []" :key="group.id" class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 mb-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="font-medium dark:text-white">{{ group.name }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                {{ group.is_required ? 'Required' : 'Optional' }} ·
+                {{ group.max_select === 1 ? 'single choice' : `up to ${group.max_select}` }}
+              </span>
+            </div>
+            <button @click="deleteGroup(group.id)" class="text-red-600 hover:text-red-700 text-sm">Delete</button>
+          </div>
+
+          <!-- Options within the group -->
+          <div class="mt-2 space-y-1">
+            <div v-for="opt in group.options || []" :key="opt.id" class="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-700/50 rounded px-2 py-1">
+              <span class="dark:text-gray-200">
+                {{ opt.name }}
+                <span class="text-gray-500 dark:text-gray-400">
+                  {{ parseFloat(opt.price_delta) > 0 ? '+' : '' }}{{ opt.price_delta }} EGP
+                </span>
+                <span v-if="opt.is_default" class="text-xs text-indigo-600 dark:text-indigo-400 ml-1">(default)</span>
+                <span v-if="!opt.is_available" class="text-xs text-red-500 ml-1">(unavailable)</span>
+              </span>
+              <button @click="deleteOption(opt.id, optionsItem.id)" class="text-red-500 hover:text-red-600">Remove</button>
+            </div>
+          </div>
+
+          <!-- Add option to this group -->
+          <div class="flex gap-2 mt-2">
+            <input v-model="optionDrafts[group.id].name" placeholder="Option name" class="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+            <input v-model.number="optionDrafts[group.id].price_delta" type="number" step="0.01" placeholder="±price" class="w-24 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+            <button @click="addOption(group)" :disabled="!optionDrafts[group.id].name" class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50">Add</button>
+          </div>
+        </div>
+
+        <!-- Add a new group -->
+        <div class="border-t dark:border-gray-700 pt-3 mt-3">
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Add option group</p>
+          <div class="space-y-2">
+            <input v-model="newGroup.name" placeholder="Group name (e.g. Size)" class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+            <div class="flex items-center gap-4 text-sm">
+              <label class="flex items-center gap-1 dark:text-gray-300">
+                <input v-model="newGroup.is_required" type="checkbox" /> Required
+              </label>
+              <label class="flex items-center gap-1 dark:text-gray-300">
+                Max choices
+                <input v-model.number="newGroup.max_select" type="number" min="1" class="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+              </label>
+            </div>
+            <button @click="addGroup" :disabled="!newGroup.name || savingGroup" class="bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700 disabled:opacity-50">
+              {{ savingGroup ? 'Adding...' : 'Add Group' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -330,6 +414,24 @@ const groupedMenuItems = computed(() => {
     sectionMap[sec].push(item)
   }
   return Object.entries(sectionMap).map(([name, items]) => ({ name, items }))
+})
+
+// Relative "synced X ago" label + a staleness flag for the base-price
+// accuracy hint (Talabat sync can drift from the shop's real prices).
+const STALE_AFTER_MS = 14 * 24 * 60 * 60 * 1000  // 2 weeks
+const syncedLabel = computed(() => {
+  const ts = selectedMenu.value?.last_synced_at
+  if (!ts) return ''
+  const diff = Date.now() - new Date(ts).getTime()
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000))
+  if (days >= 1) return `${days} day${days === 1 ? '' : 's'} ago`
+  const hours = Math.floor(diff / (60 * 60 * 1000))
+  if (hours >= 1) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  return 'recently'
+})
+const pricesAreStale = computed(() => {
+  const ts = selectedMenu.value?.last_synced_at
+  return ts ? (Date.now() - new Date(ts).getTime()) > STALE_AFTER_MS : false
 })
 
 const newMenu = ref({
@@ -489,6 +591,96 @@ function closeItemModal() {
     description: '',
     price: 0,
     is_available: true,
+  }
+}
+
+// ── Option groups / options management ───────────────────────────
+const optionsItem = ref(null)
+const optionDrafts = ref({})  // { [groupId]: { name, price_delta } }
+const newGroup = ref({ name: '', is_required: false, max_select: 1 })
+const savingGroup = ref(false)
+
+// Ensure every current group has an "add option" draft the template can bind to.
+function initOptionDrafts() {
+  const drafts = {}
+  for (const g of optionsItem.value?.option_groups || []) {
+    drafts[g.id] = optionDrafts.value[g.id] || { name: '', price_delta: 0 }
+  }
+  optionDrafts.value = drafts
+}
+
+function openOptions(item) {
+  optionsItem.value = item
+  newGroup.value = { name: '', is_required: false, max_select: 1 }
+  initOptionDrafts()
+}
+
+function closeOptions() {
+  optionsItem.value = null
+  optionDrafts.value = {}
+}
+
+// Re-fetch the menu (which nests option_groups) and re-point the modal at the
+// refreshed item so newly added/removed groups and options render.
+async function reloadOptions(itemId) {
+  await selectMenu(selectedMenu.value)
+  optionsItem.value = menuItems.value.find(i => i.id === itemId) || null
+  initOptionDrafts()
+}
+
+async function addGroup() {
+  if (!newGroup.value.name) return
+  savingGroup.value = true
+  const itemId = optionsItem.value.id
+  try {
+    await api.post('/menu-item-option-groups/', {
+      menu_item: itemId,
+      name: newGroup.value.name,
+      is_required: newGroup.value.is_required,
+      min_select: newGroup.value.is_required ? 1 : 0,
+      max_select: Math.max(1, newGroup.value.max_select || 1),
+    })
+    newGroup.value = { name: '', is_required: false, max_select: 1 }
+    await reloadOptions(itemId)
+  } catch (error) {
+    toast.error('Failed to add group: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
+  }
+  savingGroup.value = false
+}
+
+async function deleteGroup(groupId) {
+  if (!(await $confirm('Delete this option group and all its options?', 'Delete Group'))) return
+  const itemId = optionsItem.value.id
+  try {
+    await api.delete(`/menu-item-option-groups/${groupId}/`)
+    await reloadOptions(itemId)
+  } catch (error) {
+    toast.error('Failed to delete group')
+  }
+}
+
+async function addOption(group) {
+  const draft = optionDrafts.value[group.id]
+  if (!draft?.name) return
+  const itemId = optionsItem.value.id
+  try {
+    await api.post('/menu-item-options/', {
+      group: group.id,
+      name: draft.name,
+      price_delta: draft.price_delta || 0,
+    })
+    await reloadOptions(itemId)
+  } catch (error) {
+    toast.error('Failed to add option: ' + (error.response?.data?.detail || JSON.stringify(error.response?.data)))
+  }
+}
+
+async function deleteOption(optionId, itemId) {
+  try {
+    await api.delete(`/menu-item-options/${optionId}/`)
+    await reloadOptions(itemId)
+  } catch (error) {
+    toast.error('Failed to delete option')
   }
 }
 </script>

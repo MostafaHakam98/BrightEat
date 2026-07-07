@@ -8,6 +8,7 @@ from .views import (
     MicrosoftSSOStatusView, MicrosoftLoginView, MicrosoftCallbackView, HiveSSOView,
     TaskStatusView, NotificationViewSet, QuickJoinView, RecurringOrderViewSet,
     PushPublicKeyView, PushSubscribeView, PushUnsubscribeView,
+    MenuItemOptionGroupViewSet, MenuItemOptionViewSet,
 )
 
 router = DefaultRouter()
@@ -15,6 +16,8 @@ router.register(r'users', UserViewSet, basename='user')
 router.register(r'restaurants', RestaurantViewSet, basename='restaurant')
 router.register(r'menus', MenuViewSet, basename='menu')
 router.register(r'menu-items', MenuItemViewSet, basename='menuitem')
+router.register(r'menu-item-option-groups', MenuItemOptionGroupViewSet, basename='menuitemoptiongroup')
+router.register(r'menu-item-options', MenuItemOptionViewSet, basename='menuitemoption')
 router.register(r'orders', CollectionOrderViewSet, basename='order')
 router.register(r'order-items', OrderItemViewSet, basename='orderitem')
 router.register(r'payments', PaymentViewSet, basename='payment')

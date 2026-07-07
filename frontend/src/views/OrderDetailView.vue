@@ -272,6 +272,50 @@
                   No menu items found for this order's menu. You can still add custom items below.
                 </p>
               </div>
+
+              <!-- Option/modifier choosers for the selected item -->
+              <div
+                v-if="selectedMenuItemObj?.option_groups?.length"
+                class="space-y-3 border-t dark:border-gray-700 pt-3"
+              >
+                <div v-for="group in selectedMenuItemObj.option_groups" :key="group.id">
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ group.name }}
+                      <span v-if="group.is_required" class="text-red-500">*</span>
+                    </label>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">
+                      {{ group.max_select === 1 ? 'Choose one' : `Choose up to ${group.max_select}` }}
+                    </span>
+                  </div>
+                  <div class="space-y-1">
+                    <button
+                      v-for="opt in group.options.filter(o => o.is_available)"
+                      :key="opt.id"
+                      type="button"
+                      @click="toggleOption(group, opt.id)"
+                      class="w-full flex items-center justify-between px-3 py-2 rounded border text-sm transition-colors"
+                      :class="isOptionSelected(group.id, opt.id)
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                        : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    >
+                      <span class="flex items-center gap-2">
+                        <span>{{ isOptionSelected(group.id, opt.id)
+                          ? (group.max_select === 1 ? '◉' : '☑')
+                          : (group.max_select === 1 ? '○' : '☐') }}</span>
+                        {{ opt.name }}
+                      </span>
+                      <span v-if="parseFloat(opt.price_delta) !== 0" class="text-gray-500 dark:text-gray-400">
+                        {{ parseFloat(opt.price_delta) > 0 ? '+' : '' }}{{ formatPrice(opt.price_delta) }} EGP
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Item price: {{ formatPrice(optionAdjustedUnitPrice) }} EGP
+                </p>
+              </div>
+
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Assign to User
@@ -309,7 +353,7 @@
                 />
                 <button
                   @click="addMenuItem"
-                  :disabled="!selectedMenuItem || !itemQuantity"
+                  :disabled="!selectedMenuItem || !itemQuantity || !optionsValid"
                   class="bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50"
                 >
                   Add
@@ -396,6 +440,9 @@
                   </div>
                   <p class="text-sm text-gray-600 dark:text-gray-400">
                     {{ item.user_name }} — {{ formatPrice(item.unit_price) }} EGP × {{ item.quantity }}
+                  </p>
+                  <p v-if="item.selected_options && item.selected_options.length" class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    {{ item.selected_options.map(o => o.name).join(', ') }}
                   </p>
                   <p v-if="item.note" class="text-sm text-gray-500 dark:text-gray-500 italic mt-1">
                     📝 Note: {{ item.note }}
@@ -1176,6 +1223,66 @@ const selectedMenuItemLabel = computed(() => {
   return item ? `${item.name} — ${item.price} EGP` : ''
 })
 
+// ── Menu-item options / modifiers ────────────────────────────────
+// selectedOptionIds[groupId] = array of chosen option ids (length 1 for single-choice).
+const selectedOptionIds = ref({})
+
+// When the picked item changes, pre-select any option flagged is_default.
+watch(selectedMenuItemObj, (item) => {
+  const map = {}
+  for (const group of item?.option_groups || []) {
+    map[group.id] = group.options.filter(o => o.is_default && o.is_available).map(o => o.id)
+  }
+  selectedOptionIds.value = map
+})
+
+function isOptionSelected(groupId, optionId) {
+  return (selectedOptionIds.value[groupId] || []).includes(optionId)
+}
+
+function toggleOption(group, optionId) {
+  const current = selectedOptionIds.value[group.id] || []
+  if (group.max_select === 1) {
+    // Single-choice: replace selection.
+    selectedOptionIds.value = { ...selectedOptionIds.value, [group.id]: [optionId] }
+    return
+  }
+  let next
+  if (current.includes(optionId)) {
+    next = current.filter(id => id !== optionId)
+  } else {
+    next = current.length < group.max_select ? [...current, optionId] : current
+  }
+  selectedOptionIds.value = { ...selectedOptionIds.value, [group.id]: next }
+}
+
+const flatSelectedOptionIds = computed(() => Object.values(selectedOptionIds.value).flat())
+
+// Live unit price = base + sum of chosen deltas.
+const optionAdjustedUnitPrice = computed(() => {
+  const item = selectedMenuItemObj.value
+  if (!item) return 0
+  let total = parseFloat(item.price) || 0
+  for (const group of item.option_groups || []) {
+    for (const opt of group.options) {
+      if (isOptionSelected(group.id, opt.id)) total += parseFloat(opt.price_delta) || 0
+    }
+  }
+  return total
+})
+
+// All required groups satisfied within their min/max — gates the Add button.
+const optionsValid = computed(() => {
+  const item = selectedMenuItemObj.value
+  if (!item) return true
+  for (const group of item.option_groups || []) {
+    const count = (selectedOptionIds.value[group.id] || []).length
+    const min = group.is_required ? Math.max(group.min_select, 1) : group.min_select
+    if (count < min || count > group.max_select) return false
+  }
+  return true
+})
+
 const filteredMenuSections = computed(() => {
   const q = menuItemSearch.value.toLowerCase()
   const items = availableMenuItems.value.filter(item =>
@@ -1543,6 +1650,11 @@ async function addMenuItem() {
     return
   }
 
+  if (!optionsValid.value) {
+    toast.warning('Please complete the required options for this item')
+    return
+  }
+
   const wasLoading = loading.value
   loading.value = true
   try {
@@ -1550,6 +1662,12 @@ async function addMenuItem() {
       order: order.id,
       menu_item: selectedMenuItem.value,
       quantity: itemQuantity.value,
+    }
+
+    // Include chosen options when the item defines any (empty list is fine —
+    // the server enforces required groups).
+    if (selectedMenuItemObj.value?.option_groups?.length) {
+      itemData.selected_option_ids = flatSelectedOptionIds.value
     }
 
     // Add note if provided
@@ -1569,6 +1687,7 @@ async function addMenuItem() {
       menuItemSearch.value = ''
       itemQuantity.value = 1
       itemNote.value = ''
+      selectedOptionIds.value = {}
       selectedItemUser.value = null
       // Don't manually refetch - WebSocket will broadcast the update automatically
       // await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())

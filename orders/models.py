@@ -81,6 +81,54 @@ class MenuItem(models.Model):
         return f"{self.menu.restaurant.name} - {self.name}"
 
 
+class MenuItemOptionGroup(models.Model):
+    """A group of selectable options for a menu item (e.g. "Size", "Add-ons").
+
+    max_select == 1 renders as a single-choice (radio) group; > 1 as multi-select.
+    A group is satisfied when the number of chosen options is within
+    [effective_min, max_select], where effective_min is 1 if is_required else min_select.
+    """
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, related_name='option_groups')
+    name = models.CharField(max_length=100)
+    is_required = models.BooleanField(default=False)
+    min_select = models.PositiveIntegerField(default=0, help_text="Minimum options that must be chosen")
+    max_select = models.PositiveIntegerField(default=1, help_text="Maximum options that may be chosen (1 = single choice)")
+    display_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['display_order', 'id']
+
+    @property
+    def effective_min(self):
+        return max(self.min_select, 1) if self.is_required else self.min_select
+
+    def __str__(self):
+        return f"{self.menu_item.name} - {self.name}"
+
+
+class MenuItemOption(models.Model):
+    """A single choice within an option group, carrying a price delta.
+
+    price_delta is added to the menu item's base price when selected; it may be
+    zero (e.g. the default "Regular") or negative (a discount).
+    """
+    group = models.ForeignKey(MenuItemOptionGroup, on_delete=models.CASCADE, related_name='options')
+    name = models.CharField(max_length=100)
+    price_delta = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    is_default = models.BooleanField(default=False)
+    is_available = models.BooleanField(default=True)
+    display_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['display_order', 'id']
+
+    def __str__(self):
+        sign = '+' if self.price_delta >= 0 else ''
+        return f"{self.name} ({sign}{self.price_delta})"
+
+
 class FeePreset(models.Model):
     """Fee preset for quick setup"""
     FEE_SPLIT_CHOICES = [
@@ -202,12 +250,21 @@ class OrderItem(models.Model):
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     note = models.TextField(blank=True, help_text="Special instructions or modifications for this item")
-    
+
+    # Snapshot of chosen options at add time: list of
+    # {"id", "group", "name", "price_delta"} so the line item is immutable
+    # history even if the menu item's options are later edited or deleted.
+    selected_options = models.JSONField(default=list, blank=True)
+    # Deterministic fingerprint of the chosen option set (see serializers._options_signature).
+    # Empty when no options are chosen. Part of the uniqueness key so distinct
+    # variants of the same item (e.g. "Large" vs "Regular") are separate lines.
+    options_signature = models.CharField(max_length=64, blank=True, default='')
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['-created_at']
-        unique_together = [['order', 'user', 'menu_item', 'custom_name']]
+        unique_together = [['order', 'user', 'menu_item', 'custom_name', 'options_signature']]
     
     def __str__(self):
         item_name = self.menu_item.name if self.menu_item else self.custom_name
