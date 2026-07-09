@@ -147,10 +147,18 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
                           ? const Icon(Icons.check_circle, color: Colors.green)
                           : const Icon(Icons.cancel, color: Colors.red),
                       title: Text(item.name),
-                      subtitle: Text('${item.price.toStringAsFixed(2)} EGP'),
+                      subtitle: Text(item.optionGroups.isEmpty
+                          ? '${item.price.toStringAsFixed(2)} EGP'
+                          : '${item.price.toStringAsFixed(2)} EGP · ${item.optionGroups.length} option group${item.optionGroups.length > 1 ? 's' : ''}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          IconButton(
+                            icon: const Icon(Icons.tune, size: 20),
+                            tooltip: 'Options',
+                            onPressed: () =>
+                                _showOptionsManager(context, menu, item),
+                          ),
                           IconButton(
                             icon: const Icon(Icons.edit, size: 20),
                             tooltip: 'Edit',
@@ -349,6 +357,322 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
               }
             },
             child: Text(isEdit ? 'Save' : 'Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mirror of the web "Manage Options" modal: option groups (e.g. "Size")
+  /// with price-delta options, create/delete only (no in-place edit, same as
+  /// web).
+  void _showOptionsManager(BuildContext context, Menu menu, MenuItem item) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        MenuItem current = item;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> reload() async {
+              final ordersProvider =
+                  Provider.of<OrdersProvider>(context, listen: false);
+              await ordersProvider.fetchMenuItems(menuId: menu.id);
+              final refreshed = ordersProvider.menuItems
+                  .where((i) => i.id == item.id)
+                  .toList();
+              if (refreshed.isNotEmpty) {
+                setDialogState(() => current = refreshed.first);
+              }
+            }
+
+            Future<void> run(Future<void> Function() action) async {
+              try {
+                await action();
+                await reload();
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+
+            final apiService = Provider.of<OrdersProvider>(context,
+                    listen: false)
+                .ordersService
+                .apiService;
+
+            return AlertDialog(
+              title: Text('Options — ${current.name}'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child: current.optionGroups.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No option groups yet.\nAdd one like "Size" or "Add-ons".',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      )
+                    : ListView(
+                        children: [
+                          for (final group in current.optionGroups)
+                            Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            group.name,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        Text(
+                                          '${group.isRequired ? 'Required' : 'Optional'} · '
+                                          '${group.maxSelect == 1 ? 'choose one' : 'up to ${group.maxSelect}'}',
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600]),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete,
+                                              size: 18, color: Colors.red),
+                                          tooltip: 'Delete group',
+                                          onPressed: () async {
+                                            final ok = await showDialog<bool>(
+                                              context: context,
+                                              builder: (c) => AlertDialog(
+                                                title: const Text(
+                                                    'Delete option group'),
+                                                content: Text(
+                                                    'Delete "${group.name}" and all its options?'),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            c, false),
+                                                    child:
+                                                        const Text('Cancel'),
+                                                  ),
+                                                  ElevatedButton(
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                            backgroundColor:
+                                                                Colors.red),
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            c, true),
+                                                    child:
+                                                        const Text('Delete'),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                            if (ok == true) {
+                                              await run(() => apiService
+                                                  .deleteMenuItemOptionGroup(
+                                                      group.id));
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    for (final option in group.options)
+                                      Row(
+                                        children: [
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              option.isDefault
+                                                  ? '${option.name} (default)'
+                                                  : option.name,
+                                            ),
+                                          ),
+                                          Text(
+                                            option.priceDelta == 0
+                                                ? '—'
+                                                : '${option.priceDelta > 0 ? '+' : ''}${option.priceDelta.toStringAsFixed(2)} EGP',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600]),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.close,
+                                                size: 16, color: Colors.red),
+                                            tooltip: 'Delete option',
+                                            onPressed: () => run(() =>
+                                                apiService
+                                                    .deleteMenuItemOption(
+                                                        option.id)),
+                                          ),
+                                        ],
+                                      ),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton.icon(
+                                        icon: const Icon(Icons.add, size: 16),
+                                        label: const Text('Add option'),
+                                        onPressed: () => _showAddOptionDialog(
+                                            context, group.id, run),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+              actions: [
+                TextButton.icon(
+                  onPressed: () =>
+                      _showAddGroupDialog(context, current.id, run),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Group'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAddGroupDialog(
+    BuildContext context,
+    int menuItemId,
+    Future<void> Function(Future<void> Function()) run,
+  ) {
+    final nameController = TextEditingController();
+    final maxSelectController = TextEditingController(text: '1');
+    bool isRequired = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add Option Group'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                    labelText: 'Group name (e.g. Size)'),
+              ),
+              TextField(
+                controller: maxSelectController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    labelText: 'Max selections (1 = choose one)'),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Required'),
+                value: isRequired,
+                onChanged: (v) => setDialogState(() => isRequired = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                if (name.isEmpty) return;
+                final maxSelect =
+                    int.tryParse(maxSelectController.text.trim()) ?? 1;
+                Navigator.pop(dialogContext);
+                final ordersProvider =
+                    Provider.of<OrdersProvider>(context, listen: false);
+                await run(() => ordersProvider.ordersService.apiService
+                    .createMenuItemOptionGroup({
+                      'menu_item': menuItemId,
+                      'name': name,
+                      'is_required': isRequired,
+                      'min_select': isRequired ? 1 : 0,
+                      'max_select': maxSelect < 1 ? 1 : maxSelect,
+                    }));
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddOptionDialog(
+    BuildContext context,
+    int groupId,
+    Future<void> Function(Future<void> Function()) run,
+  ) {
+    final nameController = TextEditingController();
+    final deltaController = TextEditingController(text: '0');
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add Option'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration:
+                  const InputDecoration(labelText: 'Option name (e.g. Large)'),
+            ),
+            TextField(
+              controller: deltaController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true, signed: true),
+              decoration: const InputDecoration(
+                  labelText: 'Price delta (EGP, e.g. 10 or -5)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              final delta =
+                  double.tryParse(deltaController.text.trim()) ?? 0.0;
+              Navigator.pop(dialogContext);
+              final ordersProvider =
+                  Provider.of<OrdersProvider>(context, listen: false);
+              await run(() => ordersProvider.ordersService.apiService
+                  .createMenuItemOption({
+                    'group': groupId,
+                    'name': name,
+                    'price_delta': delta.toStringAsFixed(2),
+                  }));
+            },
+            child: const Text('Add'),
           ),
         ],
       ),

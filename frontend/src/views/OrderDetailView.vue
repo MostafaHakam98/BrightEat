@@ -439,7 +439,14 @@
                     </span>
                   </div>
                   <p class="text-sm text-gray-600 dark:text-gray-400">
-                    {{ item.user_name }} — {{ formatPrice(item.unit_price) }} EGP × {{ item.quantity }}
+                    {{ item.user_name }} —
+                    <span
+                      v-if="item.previous_unit_price != null"
+                      class="line-through text-gray-400 dark:text-gray-500"
+                      title="Old price, corrected by the collector"
+                    >{{ formatPrice(item.previous_unit_price) }}</span>
+                    <span :class="item.previous_unit_price != null ? 'font-semibold text-amber-600 dark:text-amber-400' : ''">{{ formatPrice(item.unit_price) }}</span>
+                    EGP × {{ item.quantity }}
                   </p>
                   <p v-if="item.selected_options && item.selected_options.length" class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                     {{ item.selected_options.map(o => o.name).join(', ') }}
@@ -470,6 +477,16 @@
                       class="px-2 py-1 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 font-bold"
                     >+</button>
                   </div>
+
+                  <!-- Collector/manager: fix an outdated price (old one gets struck through) -->
+                  <button
+                    v-if="currentOrder?.status === 'OPEN' && canManage"
+                    @click="openPriceModal(item)"
+                    class="border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 px-2 py-1 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                    title="Update price (outdated menu price)"
+                  >
+                    ✎
+                  </button>
 
                   <button
                     v-if="currentOrder?.status === 'OPEN' && (item.user === authStore.user?.id || currentOrder.collector === authStore.user?.id)"
@@ -1094,6 +1111,53 @@
           </BaseButton>
           <BaseButton v-if="talabatSheet?.talabat_url" class="flex-1" @click="openTalabatUrl">
             Open Talabat ↗
+          </BaseButton>
+        </div>
+      </template>
+    </BaseModal>
+
+    <!-- Collector price correction: outdated menu price → strike old, apply new -->
+    <BaseModal
+      :open="showPriceModal"
+      title="✎ Update price"
+      size="sm"
+      @close="showPriceModal = false"
+    >
+      <div v-if="priceModalItem" class="space-y-3">
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          <span class="font-medium text-gray-900 dark:text-white">{{ priceModalItem.item_name }}</span>
+          — current price {{ formatPrice(priceModalItem.unit_price) }} EGP.
+        </p>
+        <p v-if="priceModalItem.selected_options?.length" class="text-xs text-gray-500 dark:text-gray-400">
+          This line has options ({{ priceModalItem.selected_options.map(o => o.name).join(', ') }}).
+          Enter the new <span class="font-semibold">base</span> price — option extras are re-added automatically.
+        </p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+          The old price stays visible struck-through, every line of this item in the order is
+          corrected, and the menu is updated for future orders.
+        </p>
+        <input
+          v-model="priceModalValue"
+          type="number"
+          step="0.01"
+          min="0.01"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="New price (EGP)"
+          @keyup.enter="confirmPriceUpdate"
+        />
+      </div>
+      <template #footer>
+        <div class="flex gap-2">
+          <BaseButton variant="secondary" class="flex-1" @click="showPriceModal = false">
+            Cancel
+          </BaseButton>
+          <BaseButton
+            class="flex-1"
+            :disabled="!priceModalValid || updatingPrice"
+            :loading="updatingPrice"
+            @click="confirmPriceUpdate"
+          >
+            Update price
           </BaseButton>
         </div>
       </template>
@@ -1998,6 +2062,44 @@ async function adjustQuantity(item, delta) {
     toast.error('Failed to update quantity: ' + (error.response?.data?.detail || error.message))
   } finally {
     updatingItem.value = null
+  }
+}
+
+// Collector price correction modal
+const showPriceModal = ref(false)
+const priceModalItem = ref(null)
+const priceModalValue = ref('')
+const updatingPrice = ref(false)
+
+const priceModalValid = computed(() => {
+  const v = parseFloat(priceModalValue.value)
+  return !isNaN(v) && v > 0
+})
+
+function openPriceModal(item) {
+  priceModalItem.value = item
+  // Prefill with the current base price (unit price minus option deltas)
+  const deltas = (item.selected_options || [])
+    .reduce((sum, o) => sum + (parseFloat(o.price_delta) || 0), 0)
+  priceModalValue.value = (parseFloat(item.unit_price) - deltas).toFixed(2)
+  showPriceModal.value = true
+}
+
+async function confirmPriceUpdate() {
+  if (!priceModalValid.value || !priceModalItem.value) return
+  updatingPrice.value = true
+  const result = await ordersStore.updateOrderItemPrice(
+    priceModalItem.value.id,
+    parseFloat(priceModalValue.value).toFixed(2)
+  )
+  updatingPrice.value = false
+  if (result.success) {
+    showPriceModal.value = false
+    toast.success('Price updated — old price stays visible struck-through')
+    // WebSocket broadcast refreshes the order; refetch as a fallback
+    await ordersStore.fetchOrderByCode(route.params.code.toUpperCase())
+  } else {
+    toast.error(result.error?.error || 'Failed to update price')
   }
 }
 

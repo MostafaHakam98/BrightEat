@@ -15,8 +15,13 @@ const api = axios.create({
 // Add token to requests + drive the global top progress bar
 api.interceptors.request.use(
   (config) => {
+    // Never send a (possibly stale) Bearer token to credential endpoints —
+    // JWT auth runs before the view, so an expired stored token 401s the
+    // login itself ("Given token not valid for any token type").
+    const isAuthEndpoint = ['/auth/login/', '/auth/refresh/', '/auth/quick-join/']
+      .some((p) => config.url?.includes(p))
     const token = localStorage.getItem('access_token')
-    if (token) {
+    if (token && !isAuthEndpoint) {
       config.headers.Authorization = `Bearer ${token}`
     }
     progressStart()

@@ -232,10 +232,10 @@ class OrderItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
         fields = ['id', 'order', 'user', 'user_name', 'menu_item', 'custom_name',
-                  'custom_price', 'quantity', 'unit_price', 'total_price', 'item_name', 'note', 'created_at',
+                  'custom_price', 'quantity', 'unit_price', 'previous_unit_price', 'total_price', 'item_name', 'note', 'created_at',
                   'selected_option_ids', 'selected_options', 'options_signature',
                   'suggest_add_to_menu', 'suggest_update_price', 'existing_menu_item_id']
-        read_only_fields = ['id', 'unit_price', 'total_price', 'created_at',
+        read_only_fields = ['id', 'unit_price', 'previous_unit_price', 'total_price', 'created_at',
                            'selected_options', 'options_signature',
                            'suggest_add_to_menu', 'suggest_update_price', 'existing_menu_item_id']
         extra_kwargs = {

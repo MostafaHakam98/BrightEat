@@ -1,45 +1,62 @@
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 py-12">
-    <!-- Guest quick-join hero (no account needed) -->
+    <!-- Sign-in first hero: guest quick-join is a secondary, opt-in fallback -->
     <div v-if="!authStore.isAuthenticated" class="w-full max-w-md">
       <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
         <div class="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-6 text-white text-center">
           <h1 class="text-2xl font-bold">Join the food order 🍽</h1>
           <p class="text-sm opacity-90 mt-2">
-            Your team is ordering together on OrderQ. Type your name and you're in —
-            no sign-up, no password.
+            Your team is ordering together on OrderQ. Sign in so your items and
+            payment stay linked to your account.
           </p>
         </div>
-        <form @submit.prevent="quickJoin" class="px-6 py-6 space-y-4">
-          <div>
-            <label for="quick-join-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Your name
-            </label>
-            <input
-              id="quick-join-name"
-              ref="nameInput"
-              v-model="guestName"
-              type="text"
-              required
-              autofocus
-              autocomplete="name"
-              placeholder="e.g. Sara"
-              class="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            />
-          </div>
-          <p v-if="quickJoinError" class="text-sm text-red-600 dark:text-red-400">{{ quickJoinError }}</p>
-          <BaseButton type="submit" block size="lg" :loading="quickJoining" :disabled="!guestName.trim()">
-            Join in seconds
+        <div class="px-6 py-6 space-y-4">
+          <BaseButton type="button" block size="lg" @click="router.push(`/login?next=/join/${routeCode}`)">
+            Sign in to join
           </BaseButton>
-          <p class="text-center text-xs text-gray-400 dark:text-gray-500">
-            <router-link
-              :to="`/login?next=/join/${routeCode}`"
-              class="hover:text-indigo-600 dark:hover:text-indigo-400 underline"
-            >
-              Have an account? Sign in
-            </router-link>
-          </p>
-        </form>
+
+          <div class="flex items-center gap-3">
+            <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+            <span class="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wide">or</span>
+            <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+          </div>
+
+          <button
+            v-if="!showGuestForm"
+            type="button"
+            @click="revealGuestForm"
+            class="w-full text-sm text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 underline"
+          >
+            No account? Continue as guest
+          </button>
+
+          <form v-else @submit.prevent="quickJoin" class="space-y-4">
+            <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 text-xs text-yellow-700 dark:text-yellow-300">
+              Guest access only works in this browser. If you close it or switch
+              devices, you won't be able to sign back in later — for example to
+              mark your payment as paid. The collector can still settle it for you.
+            </div>
+            <div>
+              <label for="quick-join-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Your name
+              </label>
+              <input
+                id="quick-join-name"
+                ref="nameInput"
+                v-model="guestName"
+                type="text"
+                required
+                autocomplete="name"
+                placeholder="e.g. Sara"
+                class="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <p v-if="quickJoinError" class="text-sm text-red-600 dark:text-red-400">{{ quickJoinError }}</p>
+            <BaseButton type="submit" block :loading="quickJoining" :disabled="!guestName.trim()">
+              Join as guest
+            </BaseButton>
+          </form>
+        </div>
       </div>
     </div>
 
@@ -165,11 +182,18 @@ const order = ref(null)
 
 const routeCode = computed(() => (route.params.code || '').toUpperCase())
 
-// Guest quick-join (unauthenticated) state
+// Guest quick-join (unauthenticated) state — hidden until explicitly chosen
+const showGuestForm = ref(false)
 const nameInput = ref(null)
 const guestName = ref('')
 const quickJoining = ref(false)
 const quickJoinError = ref(null)
+
+async function revealGuestForm() {
+  showGuestForm.value = true
+  await nextTick()
+  nameInput.value?.focus()
+}
 
 async function quickJoin() {
   const name = guestName.value.trim()
@@ -215,11 +239,9 @@ async function joinOrder() {
 }
 
 onMounted(async () => {
-  // Guests can't fetch the order preview — show the quick-join hero instead
+  // Guests can't fetch the order preview — show the sign-in-first hero instead
   if (!authStore.isAuthenticated) {
     loading.value = false
-    await nextTick()
-    nameInput.value?.focus()
     return
   }
 

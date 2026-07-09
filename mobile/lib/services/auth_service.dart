@@ -59,6 +59,36 @@ class AuthService {
     }
   }
 
+  /// Hive SSO status: {'enabled': bool, 'login_url': String?}
+  Future<Map<String, dynamic>> ssoStatus() async {
+    try {
+      final response = await apiService.getSsoStatus();
+      return Map<String, dynamic>.from(response.data as Map);
+    } catch (_) {
+      return {'enabled': false};
+    }
+  }
+
+  /// Exchange a Hive-verified email for OrderQ JWTs (same as the web flow).
+  Future<Map<String, dynamic>> hiveSso(String email) async {
+    try {
+      final response = await apiService.hiveSso(email);
+      await prefs.setString('access_token', response.data['access']);
+      await prefs.setString('refresh_token', response.data['refresh']);
+      return {'success': true};
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      return {
+        'success': false,
+        'error': data is Map && data['error'] != null
+            ? data['error'].toString()
+            : 'Microsoft sign-in failed',
+      };
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   Future<Map<String, dynamic>> register(Map<String, dynamic> userData) async {
     try {
       await apiService.register(userData);

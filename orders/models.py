@@ -248,6 +248,9 @@ class OrderItem(models.Model):
     
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    # Set when a collector corrects an outdated price mid-order: holds the
+    # superseded unit price so clients can render it struck-through.
+    previous_unit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     note = models.TextField(blank=True, help_text="Special instructions or modifications for this item")
 

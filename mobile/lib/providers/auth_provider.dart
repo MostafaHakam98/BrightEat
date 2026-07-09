@@ -53,6 +53,25 @@ class AuthProvider extends ChangeNotifier {
   String? _lastError;
   String? get lastError => _lastError;
 
+  /// Complete Hive SSO: the WebView flow verified [email] against Hive's
+  /// session; exchange it for OrderQ JWTs and load the user.
+  Future<bool> ssoLogin(String email) async {
+    _isLoading = true;
+    notifyListeners();
+
+    final result = await authService.hiveSso(email);
+    if (result['success'] == true) {
+      await fetchUser();
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    }
+    _isLoading = false;
+    _lastError = result['error'] ?? 'Microsoft sign-in failed';
+    notifyListeners();
+    return false;
+  }
+
   Future<bool> register(Map<String, dynamic> userData) async {
     _isLoading = true;
     notifyListeners();

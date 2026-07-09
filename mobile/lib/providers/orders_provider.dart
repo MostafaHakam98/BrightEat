@@ -252,6 +252,15 @@ class OrdersProvider extends ChangeNotifier {
     return success;
   }
 
+  /// Collector price correction. Returns an error message, or null on success.
+  Future<String?> updateOrderItemPrice(int itemId, String price) async {
+    final error = await ordersService.updateOrderItemPrice(itemId, price);
+    if (error == null) {
+      await fetchOrderByCode(_currentOrder?.code ?? '');
+    }
+    return error;
+  }
+
   Future<void> fetchPendingPayments() async {
     _pendingPayments = await ordersService.fetchPendingPayments();
     _pendingPaymentsToMe = await ordersService.fetchPendingPaymentsToMe();

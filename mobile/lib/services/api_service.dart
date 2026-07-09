@@ -25,8 +25,14 @@ class ApiService {
     // Add request interceptor to include auth token
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
+        // Never send a (possibly stale) Bearer token to credential endpoints:
+        // JWT auth runs before the view, so an expired stored token would 401
+        // the login itself ("Given token not valid for any token type").
+        final isAuthEndpoint = options.path.contains('/auth/login/') ||
+            options.path.contains('/auth/refresh/') ||
+            options.path.contains('/auth/quick-join/');
         final token = _prefs.getString('access_token');
-        if (token != null && token.isNotEmpty) {
+        if (!isAuthEndpoint && token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }
         // Debug-only logging. NEVER log request bodies/headers in release —
@@ -161,6 +167,15 @@ class ApiService {
 
   Future<Response> refreshToken(String refreshToken) async {
     return _dio.post('/auth/refresh/', data: {'refresh': refreshToken});
+  }
+
+  // Hive/Microsoft SSO: config + email→JWT exchange (mirrors the web flow)
+  Future<Response> getSsoStatus() async {
+    return _dio.get('/auth/microsoft/status/');
+  }
+
+  Future<Response> hiveSso(String email) async {
+    return _dio.post('/auth/hive-sso/', data: {'email': email});
   }
 
   // User endpoints
@@ -303,6 +318,40 @@ class ApiService {
     return _dio.delete('/menu-items/$itemId/');
   }
 
+  // Menu Item option group / option endpoints (modifiers with price deltas)
+  Future<Response> getMenuItemOptionGroups(int menuItemId) async {
+    return _dio.get('/menu-item-option-groups/', queryParameters: {'menu_item': menuItemId});
+  }
+
+  Future<Response> createMenuItemOptionGroup(Map<String, dynamic> data) async {
+    return _dio.post('/menu-item-option-groups/', data: data);
+  }
+
+  Future<Response> deleteMenuItemOptionGroup(int groupId) async {
+    return _dio.delete('/menu-item-option-groups/$groupId/');
+  }
+
+  Future<Response> createMenuItemOption(Map<String, dynamic> data) async {
+    return _dio.post('/menu-item-options/', data: data);
+  }
+
+  Future<Response> deleteMenuItemOption(int optionId) async {
+    return _dio.delete('/menu-item-options/$optionId/');
+  }
+
+  // Notification endpoints (server-side bell feed, shared with the web app)
+  Future<Response> getNotifications() async {
+    return _dio.get('/notifications/');
+  }
+
+  Future<Response> markNotificationRead(int notificationId) async {
+    return _dio.post('/notifications/$notificationId/mark_read/');
+  }
+
+  Future<Response> markAllNotificationsRead() async {
+    return _dio.post('/notifications/mark_all_read/');
+  }
+
   // Order Item endpoints
   Future<Response> getOrderItems({int? orderId, int? userId}) async {
     final params = <String, dynamic>{};
@@ -330,6 +379,12 @@ class ApiService {
 
   Future<Response> updateMenuItemPrice(int itemId, double price) async {
     return _dio.post('/order-items/$itemId/update_menu_item_price/', data: {'price': price});
+  }
+
+  // Collector price correction mid-order: strikes the old unit price, fixes
+  // sibling lines of the same menu item, and syncs the menu item price.
+  Future<Response> updateOrderItemPrice(int itemId, String price) async {
+    return _dio.post('/order-items/$itemId/update_price/', data: {'price': price});
   }
 
   // Payment endpoints

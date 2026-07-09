@@ -74,10 +74,13 @@ test('guest quick-join: invite link → name → placed in the order', async ({ 
     headers: auth, data: { restaurant: diner.id },
   })).json()
 
-  // Act: an anonymous visitor opens the invite link and joins with just a name
+  // Act: an anonymous visitor opens the invite link — sign-in is the default,
+  // guest join is behind an explicit opt-in
   await page.goto(`/join/${order.code}`)
+  await expect(page.getByRole('button', { name: /sign in to join/i })).toBeVisible()
+  await page.getByRole('button', { name: /continue as guest/i }).click()
   await page.getByPlaceholder('e.g. Sara').fill('Guest Omar')
-  await page.getByRole('button', { name: /join in seconds/i }).click()
+  await page.getByRole('button', { name: /join as guest/i }).click()
 
   // Assert: lands authenticated on the order page
   await expect(page).toHaveURL(new RegExp(`/orders/${order.code}`), { timeout: 15_000 })

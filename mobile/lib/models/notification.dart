@@ -36,6 +36,32 @@ class AppNotification {
     );
   }
 
+  /// Build from a backend Notification row (NotificationSerializer payload),
+  /// delivered over REST /notifications/ or the WS `notification` event.
+  factory AppNotification.fromServer(Map<String, dynamic> json) {
+    final type = switch (json['notification_type']) {
+      'payment_due' => NotificationType.paymentDue,
+      'payment_received' => NotificationType.paymentReceived,
+      'order_joined' => NotificationType.orderJoined,
+      'order_status' => NotificationType.orderUpdated,
+      _ => NotificationType.info,
+    };
+    return AppNotification(
+      id: 'srv_${json['id']}',
+      title: type.displayName,
+      body: json['message'] ?? '',
+      type: type,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at']).toLocal()
+          : DateTime.now(),
+      isRead: json['is_read'] ?? false,
+      data: {
+        'server_id': json['id'],
+        if (json['order_code'] != null) 'order_code': json['order_code'],
+      },
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -76,6 +102,8 @@ enum NotificationType {
   orderOrdered,
   orderClosed,
   itemAdded,
+  orderJoined,
+  paymentDue,
   paymentReceived,
   paymentMarkedPaid,
   cutoffTimeReminder,
@@ -99,6 +127,10 @@ extension NotificationTypeExtension on NotificationType {
         return 'Order Closed';
       case NotificationType.itemAdded:
         return 'Item Added';
+      case NotificationType.orderJoined:
+        return 'Someone Joined';
+      case NotificationType.paymentDue:
+        return 'Payment Due';
       case NotificationType.paymentReceived:
         return 'Payment Received';
       case NotificationType.paymentMarkedPaid:
@@ -128,6 +160,10 @@ extension NotificationTypeExtension on NotificationType {
         return Icons.close;
       case NotificationType.itemAdded:
         return Icons.add;
+      case NotificationType.orderJoined:
+        return Icons.person_add;
+      case NotificationType.paymentDue:
+        return Icons.account_balance_wallet;
       case NotificationType.paymentReceived:
         return Icons.payment;
       case NotificationType.paymentMarkedPaid:
@@ -157,6 +193,10 @@ extension NotificationTypeExtension on NotificationType {
         return Colors.grey;
       case NotificationType.itemAdded:
         return Colors.blue;
+      case NotificationType.orderJoined:
+        return Colors.teal;
+      case NotificationType.paymentDue:
+        return Colors.deepOrange;
       case NotificationType.paymentReceived:
         return Colors.green;
       case NotificationType.paymentMarkedPaid:

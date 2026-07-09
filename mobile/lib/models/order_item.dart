@@ -26,6 +26,9 @@ class OrderItem {
   final String? customName;
   final double? customPrice;
   final double unitPrice;
+  // Old unit price kept when a collector corrects an outdated price;
+  // rendered struck-through so everyone can see it was updated.
+  final double? previousUnitPrice;
   final int quantity;
   final double totalPrice;
   final String? note;
@@ -42,6 +45,7 @@ class OrderItem {
     this.customName,
     this.customPrice,
     required this.unitPrice,
+    this.previousUnitPrice,
     required this.quantity,
     required this.totalPrice,
     this.note,
@@ -110,6 +114,7 @@ class OrderItem {
       customName: json['custom_name'],
       customPrice: _parseDouble(json['custom_price']),
       unitPrice: _parseDouble(json['unit_price']) ?? 0.0,
+      previousUnitPrice: _parseDouble(json['previous_unit_price']),
       quantity: json['quantity'],
       totalPrice: _parseDouble(json['total_price']) ?? 0.0,
       note: json['note'],

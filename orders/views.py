@@ -8,7 +8,7 @@ from django.db.models import Q, Sum, Count
 from django.utils import timezone
 from django.db import transaction, IntegrityError, connection
 from django.http import HttpResponse, JsonResponse
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 import csv
 import io
@@ -1618,6 +1618,85 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(item)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def update_price(self, request, pk=None):
+        """Collector fixes an outdated price mid-order.
+
+        Sets a new base price for the line's menu item, keeps each affected
+        line's old unit price in previous_unit_price (rendered struck-through
+        by clients), corrects every line of the same menu item in this order
+        (option deltas from each line's snapshot still apply), and syncs the
+        menu item so future orders start correct. Custom items update just
+        their own line.
+        """
+        item = self.get_object()
+        order = item.order
+
+        if order.collector != request.user and request.user.role not in ['manager', 'admin']:
+            return Response(
+                {'error': 'Only the collector or a manager can update prices'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        if order.status != 'OPEN':
+            return Response(
+                {'error': 'Prices can only be updated while the order is open'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        raw_price = request.data.get('price')
+        try:
+            new_price = Decimal(str(raw_price))
+        except (InvalidOperation, ValueError, TypeError):
+            return Response({'error': 'Invalid price format'}, status=status.HTTP_400_BAD_REQUEST)
+        if new_price <= 0:
+            return Response({'error': 'Price must be positive'}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_lines = 0
+        if item.menu_item:
+            menu_item = item.menu_item
+            old_price = menu_item.price
+            menu_item.price = new_price
+            menu_item.save(update_fields=['price'])
+
+            # Correct every line of this menu item in this order; each line
+            # re-adds its own snapshotted option deltas on top of the new base.
+            for line in order.items.filter(menu_item=menu_item):
+                deltas = sum(
+                    (Decimal(str(o.get('price_delta', 0))) for o in (line.selected_options or [])),
+                    Decimal('0')
+                )
+                new_unit = new_price + deltas
+                if new_unit != line.unit_price:
+                    line.previous_unit_price = line.unit_price
+                    line.unit_price = new_unit
+                    line.save()
+                    updated_lines += 1
+        else:
+            old_price = item.unit_price
+            if new_price != item.unit_price:
+                item.previous_unit_price = item.unit_price
+                item.unit_price = new_price
+                item.custom_price = new_price
+                item.save()
+                updated_lines = 1
+
+        AuditLog.objects.create(
+            order=order,
+            user=request.user,
+            action='fee_updated',
+            details={
+                'action': 'order_item_price_updated',
+                'item_name': item.menu_item.name if item.menu_item else item.custom_name,
+                'old_price': float(old_price),
+                'new_price': float(new_price),
+                'lines_updated': updated_lines,
+            }
+        )
+        broadcast_order_update(order)
+
+        item.refresh_from_db()
+        return Response(self.get_serializer(item).data)
 
 
 class PaymentViewSet(viewsets.ModelViewSet):

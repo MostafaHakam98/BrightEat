@@ -3023,6 +3023,85 @@ class _ExpandableItemCard extends StatefulWidget {
 class _ExpandableItemCardState extends State<_ExpandableItemCard> {
   bool _isExpanded = false;
 
+  /// Collector price correction: new base price, old unit price is kept and
+  /// rendered struck-through; sibling lines + menu item sync server-side.
+  void _showUpdatePriceDialog(String itemName) {
+    final deltas = widget.item.selectedOptions
+        .fold<double>(0, (sum, o) => sum + o.priceDelta);
+    final basePrice = widget.item.unitPrice - deltas;
+    final controller =
+        TextEditingController(text: basePrice.toStringAsFixed(2));
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Update Price'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$itemName — current ${widget.item.unitPrice.toStringAsFixed(2)} EGP.',
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              widget.item.selectedOptions.isNotEmpty
+                  ? 'This line has options; enter the new BASE price — option '
+                      'extras are re-added automatically. The old price stays '
+                      'visible struck-through and the menu is updated too.'
+                  : 'The old price stays visible struck-through and the menu '
+                      'is updated for future orders.',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'New price',
+                suffixText: 'EGP',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final price = double.tryParse(controller.text.trim());
+              if (price == null || price <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Enter a valid price'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(dialogContext);
+              final error = await widget.ordersProvider
+                  .updateOrderItemPrice(widget.item.id, price.toStringAsFixed(2));
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(error ?? 'Price updated'),
+                  backgroundColor: error == null ? Colors.green : Colors.red,
+                ),
+              );
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -3159,6 +3238,40 @@ class _ExpandableItemCardState extends State<_ExpandableItemCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Unit price row; a corrected price shows the old one
+                    // struck-through so everyone knows it was updated.
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.sell_outlined,
+                          size: 18,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                        const SizedBox(width: 8),
+                        if (widget.item.previousUnitPrice != null) ...[
+                          Text(
+                            widget.item.previousUnitPrice!.toStringAsFixed(2),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[500],
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          '${widget.item.unitPrice.toStringAsFixed(2)} EGP × ${widget.item.quantity} = ${widget.item.totalPrice.toStringAsFixed(2)} EGP',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: widget.item.previousUnitPrice != null
+                                ? Colors.amber[800]
+                                : Theme.of(context).textTheme.bodyLarge?.color,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     // Chosen options (snapshot)
                     if (widget.item.selectedOptions.isNotEmpty) ...[
                       Wrap(
@@ -3238,6 +3351,20 @@ class _ExpandableItemCardState extends State<_ExpandableItemCard> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                    ],
+                    // Collector/manager: fix an outdated price mid-order
+                    if (widget.order.status == 'OPEN' && (isCollector || isManager)) ...[
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => _showUpdatePriceDialog(itemName),
+                          icon: const Icon(Icons.edit, size: 18),
+                          label: const Text('Update price'),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                        ),
+                      ),
                     ],
                     // Remove button
                     if (canRemove) ...[

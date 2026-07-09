@@ -1049,3 +1049,110 @@ class MenuItemOptionsTest(TestCase):
         self._add(order_id, [self.large.id])  # 50
         order = CollectionOrder.objects.get(id=order_id)
         self.assertEqual(order.get_total_items_cost(), Decimal('50.00'))
+
+
+class OrderItemPriceUpdateTest(TestCase):
+    """Mid-order price correction: collector fixes an outdated price, the old
+    unit price is kept for strikethrough display, sibling lines of the same
+    menu item are corrected, and the menu item syncs for future orders."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.collector = make_user('pricecollector')
+        self.member = make_user('pricemember')
+        self.restaurant = Restaurant.objects.create(name='Bakery', created_by=self.collector)
+        self.menu = Menu.objects.create(restaurant=self.restaurant, name='Main')
+        self.item = MenuItem.objects.create(menu=self.menu, name='Croissant', price=Decimal('30.00'))
+        self.size = MenuItemOptionGroup.objects.create(
+            menu_item=self.item, name='Size', is_required=False, min_select=0, max_select=1
+        )
+        self.large = MenuItemOption.objects.create(group=self.size, name='Large', price_delta=Decimal('10.00'))
+
+    def _auth(self, user):
+        token = get_token(self.client, user.username)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+    def _open_order(self):
+        res = self.client.post('/api/orders/', {'restaurant': self.restaurant.id}, format='json')
+        return res.data['id']
+
+    def test_collector_updates_price_with_history_and_siblings(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        plain = self.client.post('/api/order-items/', {
+            'order': order_id, 'menu_item': self.item.id, 'quantity': 1,
+        }, format='json').data
+        variant = self.client.post('/api/order-items/', {
+            'order': order_id, 'menu_item': self.item.id, 'quantity': 2,
+            'selected_option_ids': [self.large.id],
+        }, format='json').data
+
+        res = self.client.post(f"/api/order-items/{plain['id']}/update_price/",
+                               {'price': '35.00'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(Decimal(res.data['unit_price']), Decimal('35.00'))
+        self.assertEqual(Decimal(res.data['previous_unit_price']), Decimal('30.00'))
+
+        # Sibling variant line: new base + its own snapshotted delta.
+        sibling = OrderItem.objects.get(id=variant['id'])
+        self.assertEqual(sibling.unit_price, Decimal('45.00'))
+        self.assertEqual(sibling.previous_unit_price, Decimal('40.00'))
+        self.assertEqual(sibling.total_price, Decimal('90.00'))
+
+        # Menu item base price synced for future orders.
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.price, Decimal('35.00'))
+
+    def test_non_collector_cannot_update_price(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        line = self.client.post('/api/order-items/', {
+            'order': order_id, 'menu_item': self.item.id, 'quantity': 1,
+        }, format='json').data
+        # Member joins with their own item — a participant who can SEE the
+        # collector's line (non-participants get 404 via queryset scoping)
+        # but still may not reprice it.
+        self._auth(self.member)
+        self.client.post('/api/order-items/', {
+            'order': order_id, 'menu_item': self.item.id, 'quantity': 1,
+            'selected_option_ids': [self.large.id],
+        }, format='json')
+        res = self.client.post(f"/api/order-items/{line['id']}/update_price/",
+                               {'price': '99.00'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_update_price_requires_open_order(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        line = self.client.post('/api/order-items/', {
+            'order': order_id, 'menu_item': self.item.id, 'quantity': 1,
+        }, format='json').data
+        self.client.post(f'/api/orders/{order_id}/lock/', {}, format='json')
+        res = self.client.post(f"/api/order-items/{line['id']}/update_price/",
+                               {'price': '35.00'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_custom_item_price_update(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        line = self.client.post('/api/order-items/', {
+            'order': order_id, 'custom_name': 'Off-menu wrap', 'custom_price': '50.00',
+            'quantity': 1,
+        }, format='json').data
+        res = self.client.post(f"/api/order-items/{line['id']}/update_price/",
+                               {'price': '55.00'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(Decimal(res.data['unit_price']), Decimal('55.00'))
+        self.assertEqual(Decimal(res.data['previous_unit_price']), Decimal('50.00'))
+
+    def test_invalid_price_rejected(self):
+        self._auth(self.collector)
+        order_id = self._open_order()
+        line = self.client.post('/api/order-items/', {
+            'order': order_id, 'menu_item': self.item.id, 'quantity': 1,
+        }, format='json').data
+        for bad in ['abc', '-5', '0']:
+            res = self.client.post(f"/api/order-items/{line['id']}/update_price/",
+                                   {'price': bad}, format='json')
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)

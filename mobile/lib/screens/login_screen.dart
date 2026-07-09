@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
 import '../providers/auth_provider.dart';
 import '../providers/notifications_provider.dart';
+import 'sso_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -21,6 +22,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   final _passwordFocusNode = FocusNode();
   bool _obscurePassword = true;
   bool _rememberMe = false;
+  bool _ssoEnabled = false;
+  bool _ssoLoading = false;
+  String _ssoLoginUrl = '';
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _slideAnimation;
@@ -30,6 +34,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _loadSavedCredentials();
+    _loadSsoStatus();
     
     _animationController = AnimationController(
       vsync: this,
@@ -93,6 +98,49 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         _usernameController.text = savedUsername;
         _rememberMe = true;
       });
+    }
+  }
+
+  Future<void> _loadSsoStatus() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final status = await authProvider.authService.ssoStatus();
+    if (!mounted) return;
+    setState(() {
+      _ssoEnabled = status['enabled'] == true &&
+          (status['login_url'] ?? '').toString().isNotEmpty;
+      _ssoLoginUrl = (status['login_url'] ?? '').toString();
+    });
+  }
+
+  Future<void> _handleSsoLogin() async {
+    // The WebView drives Microsoft auth against Hive and pops with the
+    // verified email; we then exchange it for OrderQ JWTs.
+    final email = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => SsoLoginScreen(loginUrl: _ssoLoginUrl),
+      ),
+    );
+    if (email == null || !mounted) return;
+
+    setState(() => _ssoLoading = true);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.ssoLogin(email);
+    if (!mounted) return;
+    setState(() => _ssoLoading = false);
+
+    if (success) {
+      final notificationsProvider =
+          Provider.of<NotificationsProvider>(context, listen: false);
+      notificationsProvider.connectWebSocket(context);
+      context.go('/splash-transition');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.lastError ?? 'Microsoft sign-in failed'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 
@@ -501,6 +549,46 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                         );
                                       },
                                     ),
+                                    if (_ssoEnabled) ...[
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        children: [
+                                          Expanded(child: Divider(color: isDark ? Colors.grey[700] : Colors.grey[300])),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                                            child: Text(
+                                              'or',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                              ),
+                                            ),
+                                          ),
+                                          Expanded(child: Divider(color: isDark ? Colors.grey[700] : Colors.grey[300])),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        height: 48,
+                                        child: OutlinedButton.icon(
+                                          onPressed: _ssoLoading ? null : _handleSsoLogin,
+                                          icon: _ssoLoading
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                )
+                                              : const Icon(Icons.window, size: 18),
+                                          label: const Text('Login with Hive (Microsoft)'),
+                                          style: OutlinedButton.styleFrom(
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),

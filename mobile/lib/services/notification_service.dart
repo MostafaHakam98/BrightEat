@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -8,6 +10,11 @@ class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
+
+  /// Set by the app shell once the router exists; receives the notification's
+  /// `data` map (e.g. {'order_code': 'AB12CD'}) when the user taps a
+  /// system-tray notification.
+  static void Function(Map<String, dynamic> data)? onTap;
 
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
@@ -57,9 +64,17 @@ class NotificationService {
   }
 
   void _onNotificationTapped(NotificationResponse response) {
-    // Handle notification tap
     print('Notification tapped: ${response.payload}');
-    // You can navigate to specific screens based on the payload
+    final payload = response.payload;
+    if (payload == null || payload.isEmpty) {
+      onTap?.call(const {});
+      return;
+    }
+    try {
+      onTap?.call(Map<String, dynamic>.from(jsonDecode(payload) as Map));
+    } catch (_) {
+      onTap?.call(const {});
+    }
   }
 
   Future<void> showNotification(AppNotification notification) async {
@@ -100,7 +115,7 @@ class NotificationService {
       notification.title,
       notification.body,
       details,
-      payload: notification.data?.toString(),
+      payload: notification.data != null ? jsonEncode(notification.data) : null,
     );
   }
 
@@ -148,7 +163,7 @@ class NotificationService {
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
-      payload: notification.data?.toString(),
+      payload: notification.data != null ? jsonEncode(notification.data) : null,
     );
   }
 

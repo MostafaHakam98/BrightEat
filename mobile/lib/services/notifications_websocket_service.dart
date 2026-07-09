@@ -10,6 +10,7 @@ class NotificationsWebSocketService {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   Function(CollectionOrder)? _onNewOrder;
+  Function(Map<String, dynamic>)? _onNotification;
   Timer? _pingTimer;
   int _reconnectAttempts = 0;
   static const int _maxReconnectAttempts = 5;
@@ -20,12 +21,16 @@ class NotificationsWebSocketService {
 
   NotificationsWebSocketService(this._prefs);
 
-  void connect(Function(CollectionOrder) onNewOrder) {
+  void connect(
+    Function(CollectionOrder) onNewOrder, {
+    Function(Map<String, dynamic>)? onNotification,
+  }) {
     if (_isConnecting || (_channel != null && _onNewOrder != null)) {
       return; // Already connected or connecting
     }
 
     _onNewOrder = onNewOrder;
+    _onNotification = onNotification;
     _reconnectAttempts = 0;
     _connect();
   }
@@ -64,6 +69,11 @@ class NotificationsWebSocketService {
               final order = CollectionOrder.fromJson(data['order']);
               print('📥 Parsed order: ${order.code}, Collector: ${order.collector?.id}');
               _onNewOrder?.call(order);
+            } else if (data['type'] == 'notification' && data['notification'] != null) {
+              // Personal in-app notification (payment_due, order_joined, ...)
+              print('📥 Received notification event via WebSocket');
+              _onNotification?.call(
+                  Map<String, dynamic>.from(data['notification'] as Map));
             } else if (data['type'] == 'pong') {
               // Heartbeat response
               print('💓 Notifications WebSocket heartbeat received');
@@ -144,6 +154,7 @@ class NotificationsWebSocketService {
     _channel?.sink.close();
     _channel = null;
     _onNewOrder = null;
+    _onNotification = null;
     _reconnectAttempts = 0;
     _isConnecting = false;
   }

@@ -413,6 +413,22 @@ class OrdersService {
     }
   }
 
+  /// Collector price correction; server strikes the old unit price and
+  /// corrects sibling lines. Returns an error message, or null on success.
+  Future<String?> updateOrderItemPrice(int itemId, String price) async {
+    try {
+      await apiService.updateOrderItemPrice(itemId, price);
+      return null;
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      return data is Map && data['error'] != null
+          ? data['error'].toString()
+          : 'Failed to update price';
+    } catch (e) {
+      return 'Failed to update price';
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchPendingPayments() async {
     try {
       final response = await apiService.getPendingPayments();

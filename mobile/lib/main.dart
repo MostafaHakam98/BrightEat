@@ -83,6 +83,15 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _router = _createRouter(widget.isAuthenticated);
+    // Tapping a system-tray notification deep-links into the app.
+    NotificationService.onTap = (data) {
+      final orderCode = data['order_code'];
+      if (orderCode is String && orderCode.isNotEmpty) {
+        _router.push('/orders/${orderCode.toUpperCase()}');
+      } else {
+        _router.push('/notifications');
+      }
+    };
   }
 
   @override
@@ -105,7 +114,8 @@ class _MyAppState extends State<MyApp> {
           create: (_) => OrdersProvider(widget.ordersService),
         ),
         ChangeNotifierProvider(
-          create: (_) => NotificationsProvider(),
+          create: (_) =>
+              NotificationsProvider(widget.ordersService.apiService),
         ),
       ],
       child: Consumer<ThemeProvider>(
@@ -355,7 +365,6 @@ class _MyAppState extends State<MyApp> {
       redirect: (context, state) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final isAuth = authProvider.isAuthenticated;
-        final isManager = authProvider.isManager;
         final isAdmin = authProvider.isAdmin;
         final isSplashRoute = state.uri.path == '/splash';
         final isSplashTransitionRoute = state.uri.path == '/splash-transition';
@@ -363,7 +372,8 @@ class _MyAppState extends State<MyApp> {
         final isRegisterRoute = state.uri.path == '/register';
         final isUsersRoute = state.uri.path == '/users';
         final requiresAuth = !isLoginRoute && !isRegisterRoute && !isSplashRoute && !isSplashTransitionRoute;
-        final requiresManager = state.uri.path.startsWith('/restaurants');
+        // Restaurants/menus are open to all authenticated users (team
+        // decision 2026-07, matching the web router and backend permissions).
         final requiresAdmin = isRegisterRoute || isUsersRoute;
 
         // Allow splash screens to stay (they handle their own navigation)
@@ -381,9 +391,6 @@ class _MyAppState extends State<MyApp> {
           return '/';
         }
         if (isAuth && isUsersRoute && !isAdmin) {
-          return '/';
-        }
-        if (requiresManager && !isManager && !isAdmin) {
           return '/';
         }
         if (requiresAdmin && !isAdmin) {

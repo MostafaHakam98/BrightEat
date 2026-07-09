@@ -349,6 +349,18 @@ export const useOrdersStore = defineStore('orders', () => {
     }
   }
 
+  // Collector fixes an outdated line price mid-order; server keeps the old
+  // unit price in previous_unit_price and corrects sibling lines + the menu.
+  async function updateOrderItemPrice(itemId, price) {
+    try {
+      const response = await api.post(`/order-items/${itemId}/update_price/`, { price })
+      // WebSocket broadcast refreshes the order for everyone
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { success: false, error: error.response?.data }
+    }
+  }
+
   async function addItemToMenu(itemId, menuId = null) {
     try {
       const data = menuId ? { menu_id: menuId } : {}
@@ -477,6 +489,7 @@ export const useOrdersStore = defineStore('orders', () => {
     removeOrderItem,
     addItemToMenu,
     updateMenuItemPrice,
+    updateOrderItemPrice,
     fetchFeePresets,
     getMonthlyReport,
     getReport,
